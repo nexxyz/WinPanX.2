@@ -24,7 +24,7 @@ PrivilegesRequiredOverridesAllowed=dialog
 SetupIconFile=..\src\WinPanX2\Assets\WinPanX.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
