@@ -34,19 +34,13 @@ internal sealed class CoreAudioDeviceProvider : IAudioDeviceProvider
 
     public string GetDefaultRenderDeviceId()
     {
-        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+        // Use NAudio for default device resolution (stable)
+        var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+        var device = enumerator.GetDefaultAudioEndpoint(
+            NAudio.CoreAudioApi.DataFlow.Render,
+            NAudio.CoreAudioApi.Role.Multimedia);
 
-        enumerator.GetDefaultAudioEndpoint(
-            EDataFlow.eRender,
-            ERole.eMultimedia,
-            out var device);
-
-        device.GetId(out var id);
-
-        Marshal.ReleaseComObject(device);
-        Marshal.ReleaseComObject(enumerator);
-
-        return id;
+        return device.ID;
     }
 
     public IEnumerable<string> GetActiveRenderDeviceIds()
