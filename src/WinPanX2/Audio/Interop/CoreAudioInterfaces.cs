@@ -19,7 +19,7 @@ internal enum ERole
     ERole_enum_count
 }
 
-internal enum DEVICE_STATE : uint
+internal enum DEVICE_STATE
 {
     ACTIVE = 0x00000001,
     DISABLED = 0x00000002,
@@ -40,12 +40,38 @@ internal enum AudioSessionState
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDeviceEnumerator
 {
+    // Slot 3 (after IUnknown)
     int NotImpl1();
-    int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice ppDevice);
-    int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string pwstrId, out IMMDevice ppDevice);
-    int EnumAudioEndpoints(EDataFlow dataFlow, DEVICE_STATE dwStateMask, out IMMDeviceCollection ppDevices);
-    int RegisterEndpointNotificationCallback(IMMNotificationClient pClient);
-    int UnregisterEndpointNotificationCallback(IMMNotificationClient pClient);
+
+    // Slot 4
+    [PreserveSig]
+    int GetDefaultAudioEndpoint(
+        EDataFlow dataFlow,
+        ERole role,
+        out IMMDevice ppDevice);
+
+    // Slot 5
+    [PreserveSig]
+    int GetDevice(
+        [MarshalAs(UnmanagedType.LPWStr)] string pwstrId,
+        out IMMDevice ppDevice);
+
+    // Slot 6
+    [PreserveSig]
+    int EnumAudioEndpoints(
+        EDataFlow dataFlow,
+        int dwStateMask,
+        out IMMDeviceCollection ppDevices);
+
+    // Slot 7
+    [PreserveSig]
+    int RegisterEndpointNotificationCallback(
+        IMMNotificationClient pClient);
+
+    // Slot 8
+    [PreserveSig]
+    int UnregisterEndpointNotificationCallback(
+        IMMNotificationClient pClient);
 }
 
 [ComImport]
@@ -53,18 +79,28 @@ internal interface IMMDeviceEnumerator
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDevice
 {
+    [PreserveSig]
     int Activate(ref Guid iid, uint dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+
+    [PreserveSig]
     int OpenPropertyStore(int stgmAccess, out IntPtr ppProperties);
+
+    [PreserveSig]
     int GetId([MarshalAs(UnmanagedType.LPWStr)] out string ppstrId);
+
+    [PreserveSig]
     int GetState(out int pdwState);
 }
 
 [ComImport]
-[Guid("0BD7A1BE-7A1A-44DB-8397-C0A16D26C8D3")]
+[Guid("0BD7A1BE-7A1A-44DB-8397-C0A9B8F6D7C3")]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDeviceCollection
 {
+    [PreserveSig]
     int GetCount(out uint pcDevices);
+
+    [PreserveSig]
     int Item(uint nDevice, out IMMDevice ppDevice);
 }
 
@@ -92,12 +128,25 @@ internal interface IMMNotificationClient
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioSessionManager2
 {
+    [PreserveSig]
     int GetAudioSessionControl(IntPtr AudioSessionGuid, uint StreamFlags, out IntPtr SessionControl);
+
+    [PreserveSig]
     int GetSimpleAudioVolume(IntPtr AudioSessionGuid, uint StreamFlags, out IntPtr AudioVolume);
+
+    [PreserveSig]
     int GetSessionEnumerator(out IAudioSessionEnumerator SessionEnum);
+
+    [PreserveSig]
     int RegisterSessionNotification(IntPtr SessionNotification);
+
+    [PreserveSig]
     int UnregisterSessionNotification(IntPtr SessionNotification);
+
+    [PreserveSig]
     int RegisterDuckNotification([MarshalAs(UnmanagedType.LPWStr)] string sessionID, IntPtr duckNotification);
+
+    [PreserveSig]
     int UnregisterDuckNotification(IntPtr duckNotification);
 }
 
@@ -106,7 +155,10 @@ internal interface IAudioSessionManager2
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioSessionEnumerator
 {
+    [PreserveSig]
     int GetCount(out int SessionCount);
+
+    [PreserveSig]
     int GetSession(int SessionCount, out IAudioSessionControl Session);
 }
 
@@ -115,14 +167,31 @@ internal interface IAudioSessionEnumerator
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioSessionControl
 {
+    [PreserveSig]
     int GetState(out AudioSessionState state);
+
+    [PreserveSig]
     int GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+
+    [PreserveSig]
     int SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string Value, ref Guid EventContext);
+
+    [PreserveSig]
     int GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+
+    [PreserveSig]
     int SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string Value, ref Guid EventContext);
+
+    [PreserveSig]
     int GetGroupingParam(out Guid pRetVal);
+
+    [PreserveSig]
     int SetGroupingParam(ref Guid Override, ref Guid EventContext);
+
+    [PreserveSig]
     int RegisterAudioSessionNotification(IntPtr NewNotifications);
+
+    [PreserveSig]
     int UnregisterAudioSessionNotification(IntPtr NewNotifications);
 }
 
@@ -143,10 +212,19 @@ internal interface IAudioSessionControl2
     int UnregisterAudioSessionNotification(IntPtr NewNotifications);
 
     // IAudioSessionControl2 methods
+    [PreserveSig]
     int GetSessionIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+
+    [PreserveSig]
     int GetSessionInstanceIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+
+    [PreserveSig]
     int GetProcessId(out uint pRetVal);
+
+    [PreserveSig]
     int IsSystemSoundsSession();
+
+    [PreserveSig]
     int SetDuckingPreference(bool optOut);
 }
 
@@ -155,7 +233,12 @@ internal interface IAudioSessionControl2
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioChannelVolume
 {
+    [PreserveSig]
     int GetChannelCount(out uint pdwCount);
+
+    [PreserveSig]
     int SetChannelVolume(uint dwIndex, float fLevel, ref Guid EventContext);
+
+    [PreserveSig]
     int GetChannelVolume(uint dwIndex, out float pfLevel);
 }

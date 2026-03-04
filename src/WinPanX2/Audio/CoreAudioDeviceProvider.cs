@@ -1,72 +1,83 @@
+using System.Runtime.InteropServices;
 using WinPanX2.Audio.Interop;
+using WinPanX2.Logging;
+using NAudio.CoreAudioApi;
 
 namespace WinPanX2.Audio;
 
 internal sealed class CoreAudioDeviceProvider : IAudioDeviceProvider
 {
-    private readonly IMMDeviceEnumerator _enumerator;
-    private IMMNotificationClient? _notificationClient;
+    // Notifications temporarily disabled to stabilize All-mode switching
+    // private MMDeviceEnumerator? _notificationEnumerator;
+    // private NAudio.CoreAudioApi.Interfaces.IMMNotificationClient? _notificationClient;
 
+    // Notifications disabled; keep event for compatibility
+    #pragma warning disable CS0067
     public event Action? TopologyChanged;
+    #pragma warning restore CS0067
 
     public CoreAudioDeviceProvider()
     {
-        _enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
     }
 
     public void RegisterNotifications()
     {
-        if (_notificationClient != null)
-            return;
-
-        _notificationClient = new DeviceNotificationClient(() =>
-        {
-            TopologyChanged?.Invoke();
-        });
-
-        _enumerator.RegisterEndpointNotificationCallback(_notificationClient);
+        // Notifications disabled for now
+        return;
     }
 
     public void UnregisterNotifications()
     {
-        if (_notificationClient == null)
-            return;
-
-        _enumerator.UnregisterEndpointNotificationCallback(_notificationClient);
-        _notificationClient = null;
+        // Notifications disabled for now
+        return;
     }
 
     public string GetDefaultRenderDeviceId()
     {
-        _enumerator.GetDefaultAudioEndpoint(
+        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+
+        enumerator.GetDefaultAudioEndpoint(
             EDataFlow.eRender,
             ERole.eMultimedia,
             out var device);
 
         device.GetId(out var id);
+
+        Marshal.ReleaseComObject(device);
+        Marshal.ReleaseComObject(enumerator);
+
         return id;
     }
 
     public IEnumerable<string> GetActiveRenderDeviceIds()
     {
-        _enumerator.EnumAudioEndpoints(
-            EDataFlow.eRender,
-            DEVICE_STATE.ACTIVE,
-            out var collection);
+        var result = new List<string>();
 
-        collection.GetCount(out var count);
-
-        for (uint i = 0; i < count; i++)
+        using (var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator())
         {
-            collection.Item(i, out var device);
-            device.GetId(out var id);
-            yield return id;
+            var devices = enumerator.EnumerateAudioEndPoints(
+                NAudio.CoreAudioApi.DataFlow.Render,
+                NAudio.CoreAudioApi.DeviceState.Active);
+
+            foreach (var device in devices)
+            {
+                result.Add(device.ID);
+            }
         }
+
+        Logger.Debug($"NAudio enumerated {result.Count} active render devices.");
+
+        return result;
     }
 
     public IMMDevice GetDeviceById(string deviceId)
     {
-        _enumerator.GetDevice(deviceId, out var device);
+        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+
+        enumerator.GetDevice(deviceId, out var device);
+
+        Marshal.ReleaseComObject(enumerator);
+
         return device;
     }
 }

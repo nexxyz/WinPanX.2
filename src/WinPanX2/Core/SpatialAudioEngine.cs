@@ -17,7 +17,7 @@ internal sealed class SpatialAudioEngine : IDisposable
 
     private readonly Dictionary<string, AudioSessionManager> _deviceManagers = new();
     private readonly ConcurrentDictionary<(string deviceId, int pid), double> _smoothedPan = new();
-    private readonly ConcurrentDictionary<(string deviceId, int pid), IntPtr> _windowCache = new();
+    // Window handles are resolved fresh each loop to ensure dynamic tracking
 
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
@@ -32,21 +32,40 @@ internal sealed class SpatialAudioEngine : IDisposable
 
     public void Start()
     {
-        if (IsEnabled) return;
+        Logger.Info($"Start() called. IsEnabled before: {IsEnabled}");
+
+        if (IsEnabled)
+        {
+            Logger.Info("Start() exiting early because IsEnabled is already true.");
+            return;
+        }
 
         try
         {
+            // Always rebuild device managers on Start to ensure fresh session attachment
+            foreach (var manager in _deviceManagers.Values)
+                manager.Dispose();
+
+            _deviceManagers.Clear();
+
             InitializeDeviceManagers();
 
             if (_deviceProvider is CoreAudioDeviceProvider realProvider)
             {
-                realProvider.TopologyChanged += OnDeviceTopologyChanged;
-                realProvider.RegisterNotifications();
+                try
+                {
+                    realProvider.TopologyChanged += OnDeviceTopologyChanged;
+                    realProvider.RegisterNotifications();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"Notification registration failed: {ex.Message}");
+                }
             }
         }
         catch (Exception ex)
         {
-            Logger.Error($"Audio init failed: {ex.Message}");
+            Logger.Error($"Audio init failed: {ex}");
             return;
         }
 
@@ -55,27 +74,32 @@ internal sealed class SpatialAudioEngine : IDisposable
 
         IsEnabled = true;
         Logger.Info("Spatial engine started");
+
+        // Immediately spatialize any currently active sessions
+        ApplyCurrentPositions();
     }
 
     public void Stop()
     {
-        if (!IsEnabled) return;
+        Logger.Info($"Stop() called. IsEnabled before: {IsEnabled}");
+
+        if (!IsEnabled)
+        {
+            Logger.Info("Stop() exiting early because IsEnabled is already false.");
+            return;
+        }
 
         _cts?.Cancel();
         try { _loopTask?.Wait(1000); } catch { }
 
         ResetAllSessions();
+        _smoothedPan.Clear();
 
         if (_deviceProvider is CoreAudioDeviceProvider realProvider)
         {
             realProvider.TopologyChanged -= OnDeviceTopologyChanged;
             realProvider.UnregisterNotifications();
         }
-
-        foreach (var manager in _deviceManagers.Values)
-            manager.Dispose();
-
-        _deviceManagers.Clear();
 
         IsEnabled = false;
         Logger.Info("Spatial engine stopped");
@@ -98,24 +122,17 @@ internal sealed class SpatialAudioEngine : IDisposable
 
                         var key = (deviceId, session.ProcessId);
 
-                        if (!_windowCache.TryGetValue(key, out var hwnd) || hwnd == IntPtr.Zero)
-                        {
-                            var resolved = WindowResolver.ResolveForProcess(
-                                session.ProcessId,
-                                _config.BindingMode == "FollowMostRecent");
+                        var resolved = WindowResolver.ResolveForProcess(
+                            session.ProcessId,
+                            _config.BindingMode == "FollowMostRecent");
 
-                            if (resolved == null)
-                                continue;
+                        if (resolved == null)
+                            continue;
 
-                            hwnd = resolved.Handle;
-                            _windowCache[key] = hwnd;
-                        }
+                        var hwnd = resolved.Handle;
 
                         if (!NativeMethods.GetWindowRect(hwnd, out var rect))
-                        {
-                            _windowCache.TryRemove(key, out _);
                             continue;
-                        }
 
                         var centerX = rect.Left + (rect.Right - rect.Left) / 2;
                         var normalized = VirtualDesktopMapper.MapToNormalized(centerX);
@@ -130,8 +147,7 @@ internal sealed class SpatialAudioEngine : IDisposable
                         var left = (float)Math.Cos(angle);
                         var right = (float)Math.Sin(angle);
 
-                        if (Math.Abs(smoothed - prev) > 0.01)
-                            session.SetStereo(left, right);
+                        session.SetStereo(left, right);
                     }
                 }
             }
@@ -140,7 +156,8 @@ internal sealed class SpatialAudioEngine : IDisposable
                 Logger.Error($"Engine loop error: {ex.Message}");
             }
 
-            Thread.Sleep(_config.PollingIntervalMs);
+            // Cancellation-aware wait instead of Thread.Sleep
+            token.WaitHandle.WaitOne(_config.PollingIntervalMs);
         }
     }
 
@@ -164,10 +181,16 @@ internal sealed class SpatialAudioEngine : IDisposable
     public void Dispose()
     {
         Stop();
+
+        foreach (var manager in _deviceManagers.Values)
+            manager.Dispose();
+
+        _deviceManagers.Clear();
     }
 
     public void SetDeviceMode(DeviceMode mode)
     {
+        Logger.Debug($"SetDeviceMode: {_deviceMode} -> {mode}, IsEnabled={IsEnabled}");
         if (_deviceMode == mode)
             return;
 
@@ -177,7 +200,6 @@ internal sealed class SpatialAudioEngine : IDisposable
             Stop();
 
         _smoothedPan.Clear();
-        _windowCache.Clear();
 
         _deviceMode = mode;
 
@@ -191,29 +213,49 @@ internal sealed class SpatialAudioEngine : IDisposable
 
     private void InitializeDeviceManagers()
     {
+        Logger.Debug($"Initializing device managers. Mode={_deviceMode}");
         _deviceManagers.Clear();
 
         if (_deviceMode == DeviceMode.Default)
         {
+            Logger.Info("[Init] Resolving default render device ID...");
             var deviceId = _deviceProvider.GetDefaultRenderDeviceId();
+            Logger.Debug($"Default device ID: {deviceId}");
+            Logger.Info($"[Init] Default device ID: {deviceId}");
+
+            Logger.Info("[Init] Resolving device by ID...");
             var device = _deviceProvider.GetDeviceById(deviceId);
+            Logger.Info("[Init] Device resolved.");
 
             var manager = new AudioSessionManager();
+
+            Logger.Info("[Init] Activating session manager...");
             manager.InitializeForDevice(device);
+            Logger.Info("[Init] Session manager activated.");
 
             _deviceManagers[deviceId] = manager;
+            Logger.Debug($"Managers count after default init: {_deviceManagers.Count}");
         }
         else if (_deviceMode == DeviceMode.All)
         {
-            foreach (var deviceId in _deviceProvider.GetActiveRenderDeviceIds())
+            var ids = _deviceProvider.GetActiveRenderDeviceIds().ToList();
+            Logger.Debug($"All mode device IDs count: {ids.Count}");
+
+            foreach (var deviceId in ids)
             {
+                Logger.Info($"[Init] Resolving device by ID (All mode): {deviceId}");
+                Logger.Debug($"All mode device ID: {deviceId}");
                 var device = _deviceProvider.GetDeviceById(deviceId);
 
                 var manager = new AudioSessionManager();
+                Logger.Info("[Init] Activating session manager (All mode)...");
                 manager.InitializeForDevice(device);
+                Logger.Info("[Init] Session manager activated (All mode).");
 
                 _deviceManagers[deviceId] = manager;
             }
+
+            Logger.Debug($"Managers count after all init: {_deviceManagers.Count}");
         }
     }
 
@@ -246,7 +288,6 @@ internal sealed class SpatialAudioEngine : IDisposable
 
                 var key = (deviceId, session.ProcessId);
                 _smoothedPan[key] = normalized;
-                _windowCache[key] = resolved.Handle;
             }
         }
     }
@@ -257,8 +298,13 @@ internal sealed class SpatialAudioEngine : IDisposable
             return;
 
         Stop();
+
+        foreach (var manager in _deviceManagers.Values)
+            manager.Dispose();
+
+        _deviceManagers.Clear();
         _smoothedPan.Clear();
-        _windowCache.Clear();
+
         Start();
     }
 }
