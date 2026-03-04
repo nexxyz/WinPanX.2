@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WinPanX2/WinPanX2.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WinPanX2.Tests/WinPanX2.Tests.csproj" />
+  </Folder>
+</Solution>
