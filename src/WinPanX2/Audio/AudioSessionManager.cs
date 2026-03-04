@@ -2,16 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using WinPanX2.Audio.Interop;
+using NAudio.CoreAudioApi;
 
 namespace WinPanX2.Audio;
 
 internal sealed class AudioSessionManager : IDisposable
 {
-    private IMMDevice? _device;
+    private MMDevice? _device;
     private IAudioSessionManager2? _sessionManager;
     public string DeviceId { get; private set; } = string.Empty;
 
-    public void InitializeForDevice(IMMDevice device)
+    public void InitializeForDevice(MMDevice device)
     {
         _device = device;
 
@@ -21,14 +22,32 @@ internal sealed class AudioSessionManager : IDisposable
             return;
         }
 
-        _device.GetId(out var id);
-        DeviceId = id;
+        DeviceId = _device.ID;
 
-        var iid = typeof(IAudioSessionManager2).GUID;
-        const uint CLSCTX_ALL = 0x17;
+        var naSessionManager = _device.AudioSessionManager;
 
-        _device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
-        _sessionManager = (IAudioSessionManager2)obj;
+        var unk = Marshal.GetIUnknownForObject(naSessionManager);
+        try
+        {
+            var iid = typeof(IAudioSessionManager2).GUID;
+            var hr = Marshal.QueryInterface(unk, ref iid, out var ptr);
+
+            if (hr != 0 || ptr == IntPtr.Zero)
+                throw new InvalidOperationException("Failed to acquire IAudioSessionManager2.");
+
+            try
+            {
+                _sessionManager = (IAudioSessionManager2)Marshal.GetObjectForIUnknown(ptr);
+            }
+            finally
+            {
+                Marshal.Release(ptr);
+            }
+        }
+        finally
+        {
+            Marshal.Release(unk);
+        }
     }
 
     public List<AudioSessionWrapper> GetActiveSessions()
