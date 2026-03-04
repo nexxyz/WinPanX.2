@@ -17,6 +17,8 @@ internal sealed class SpatialAudioEngine : IDisposable
 
     private readonly Dictionary<string, AudioSessionManager> _deviceManagers = new();
     private readonly ConcurrentDictionary<(string deviceId, int pid), double> _smoothedPan = new();
+    private HashSet<string> _excludedSet = new(StringComparer.OrdinalIgnoreCase);
+    private string _excludedSignature = string.Empty;
     // Window handles are resolved fresh each loop to ensure dynamic tracking
 
     private CancellationTokenSource? _cts;
@@ -49,6 +51,10 @@ internal sealed class SpatialAudioEngine : IDisposable
             _deviceManagers.Clear();
 
             InitializeDeviceManagers();
+
+            _excludedSet = new HashSet<string>(
+                _config.ExcludedProcesses ?? new List<string>(),
+                StringComparer.OrdinalIgnoreCase);
 
             if (_deviceProvider is CoreAudioDeviceProvider realProvider)
             {
@@ -115,6 +121,21 @@ internal sealed class SpatialAudioEngine : IDisposable
         {
             try
             {
+                // Refresh exclusion set only if config changed
+                var currentList = _config.ExcludedProcesses ?? new List<string>();
+                var signature = string.Join('|',
+                    currentList
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Select(s => s.Trim())
+                        .OrderBy(s => s, StringComparer.OrdinalIgnoreCase));
+
+                if (!string.Equals(signature, _excludedSignature, StringComparison.Ordinal))
+                {
+                    _excludedSet = new HashSet<string>(currentList, StringComparer.OrdinalIgnoreCase);
+                    _excludedSignature = signature;
+                    Logger.Debug($"ExcludedProcesses updated: [{signature}]");
+                }
+
                 foreach (var (deviceId, manager) in _deviceManagers)
                 {
                     var sessions = manager.GetActiveSessions();
@@ -123,6 +144,14 @@ internal sealed class SpatialAudioEngine : IDisposable
                     {
                         if (!session.HasStereoChannels())
                             continue;
+
+                        var processName = ProcessHelper.GetProcessName(session.ProcessId);
+                        if (processName != null && _excludedSet.Contains(processName))
+                        {
+                            Logger.Debug($"Excluded process: {processName}");
+                            session.SetStereo(1f, 1f);
+                            continue;
+                        }
 
                         var key = (deviceId, session.ProcessId);
 
@@ -274,6 +303,13 @@ internal sealed class SpatialAudioEngine : IDisposable
             {
                 if (!session.HasStereoChannels())
                     continue;
+
+                var processName = ProcessHelper.GetProcessName(session.ProcessId);
+                if (processName != null && _excludedSet.Contains(processName))
+                {
+                    session.SetStereo(1f, 1f);
+                    continue;
+                }
 
                 var resolved = WindowResolver.ResolveForProcess(
                     session.ProcessId,

@@ -10,4 +10,6 @@ public class AppConfig
     public string LogLevel { get; set; } = "Info";
     public string BindingMode { get; set; } = "Sticky";
     public double MaxPan { get; set; } = 1.0;
+
+    public List<string> ExcludedProcesses { get; set; } = new();
 }
