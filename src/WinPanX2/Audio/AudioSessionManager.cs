@@ -2,17 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using WinPanX2.Audio.Interop;
-using NAudio.CoreAudioApi;
+// no NAudio session usage
 
 namespace WinPanX2.Audio;
 
 internal sealed class AudioSessionManager : IDisposable
 {
-    private MMDevice? _device;
-    // No custom session manager; use NAudio's AudioSessionManager
+    private IMMDevice? _device;
+    private IAudioSessionManager2? _sessionManager;
     public string DeviceId { get; private set; } = string.Empty;
 
-    public void InitializeForDevice(MMDevice device)
+    public void InitializeForDevice(IMMDevice device)
     {
         _device = device;
 
@@ -22,65 +22,64 @@ internal sealed class AudioSessionManager : IDisposable
             return;
         }
 
-        DeviceId = _device.ID;
+        _device.GetId(out var id);
+        DeviceId = id;
 
-        // Activation handled by NAudio; no custom session manager required
+        // Acquire IMMDevice from MMDevice, then Activate IAudioSessionManager2
+        var iid = typeof(IAudioSessionManager2).GUID;
+        const uint CLSCTX_ALL = 0x17;
+
+        _device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
+        _sessionManager = (IAudioSessionManager2)obj;
     }
 
     public List<AudioSessionWrapper> GetActiveSessions()
     {
         var result = new List<AudioSessionWrapper>();
 
-        var sessions = _device?.AudioSessionManager.Sessions;
-        if (sessions == null)
+        if (_sessionManager == null)
             return result;
 
-        for (int i = 0; i < sessions.Count; i++)
+        _sessionManager.GetSessionEnumerator(out var enumerator);
+        try
         {
-            var session = sessions[i];
+            enumerator.GetCount(out var count);
 
-            var unkControl = Marshal.GetIUnknownForObject(session);
-            try
+            for (int i = 0; i < count; i++)
             {
-                var iidControl2 = typeof(IAudioSessionControl2).GUID;
-                var hrControl = Marshal.QueryInterface(unkControl, ref iidControl2, out var ptrControl2);
-
-                if (hrControl != 0 || ptrControl2 == IntPtr.Zero)
-                    continue;
-
+                enumerator.GetSession(i, out var control);
                 try
                 {
-                    var control2 = (IAudioSessionControl2)Marshal.GetObjectForIUnknown(ptrControl2);
+                    var control2 = (IAudioSessionControl2)control;
                     control2.GetProcessId(out var pid);
 
+                    var unkControl = Marshal.GetIUnknownForObject(control2);
                     var iidVolume = typeof(IAudioChannelVolume).GUID;
-                    var hrVolume = Marshal.QueryInterface(unkControl, ref iidVolume, out var ptrVolume);
+                    var hrVolume = Marshal.QueryInterface(unkControl, ref iidVolume, out var volumePtr);
+                    Marshal.Release(unkControl);
 
-                    if (hrVolume != 0 || ptrVolume == IntPtr.Zero)
+                    if (hrVolume != 0 || volumePtr == IntPtr.Zero)
                         continue;
 
-                    try
-                    {
-                        var volume = (IAudioChannelVolume)Marshal.GetObjectForIUnknown(ptrVolume);
-                        var wrapper = new AudioSessionWrapper((int)pid, control2, volume);
+                    var volume = (IAudioChannelVolume)Marshal.GetObjectForIUnknown(volumePtr);
+                    Marshal.Release(volumePtr);
 
-                        if (wrapper.IsActive())
-                            result.Add(wrapper);
-                    }
-                    finally
-                    {
-                        Marshal.Release(ptrVolume);
-                    }
+                    var wrapper = new AudioSessionWrapper((int)pid, control2, volume);
+
+                    if (wrapper.IsActive())
+                        result.Add(wrapper);
                 }
                 finally
                 {
-                    Marshal.Release(ptrControl2);
+                    if (control != null)
+                        Marshal.ReleaseComObject(control);
                 }
             }
-            finally
-            {
-                Marshal.Release(unkControl);
-            }
+        }
+        finally
+        {
+            if (enumerator != null)
+                Marshal.ReleaseComObject(enumerator);
         }
 
         return result;
@@ -88,6 +87,7 @@ internal sealed class AudioSessionManager : IDisposable
 
     public void Dispose()
     {
-        // No custom session manager to release
+        if (_sessionManager != null)
+            Marshal.ReleaseComObject(_sessionManager);
     }
 }

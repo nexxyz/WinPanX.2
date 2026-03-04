@@ -90,7 +90,11 @@ internal sealed class SpatialAudioEngine : IDisposable
         }
 
         _cts?.Cancel();
-        try { _loopTask?.Wait(1000); } catch { }
+        try
+        {
+            _loopTask?.Wait(); // Ensure loop fully exits before proceeding
+        }
+        catch { }
 
         ResetAllSessions();
         _smoothedPan.Clear();
