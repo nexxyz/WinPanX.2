@@ -1,0 +1,35 @@
+name: WinPanX2 CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Validate Installer Architecture Flag
+      run: |
+        $content = Get-Content installer/WinPanX2.iss
+        if ($content -notmatch 'ArchitecturesInstallIn64BitMode=\{#ArchFlag\}') {
+          Write-Error "Installer must use preprocessor ArchFlag."
+          exit 1
+        }
+        if ($content -notmatch '#define ArchFlag "x64compatible"') {
+          Write-Error "ArchFlag must be set to x64compatible."
+          exit 1
+        }
+      shell: powershell
+
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - run: dotnet restore
+    - run: dotnet build --configuration Release --no-restore
+    - run: dotnet test --configuration Release --no-build
