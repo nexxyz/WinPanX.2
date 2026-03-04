@@ -18,20 +18,30 @@ internal sealed class AudioSessionWrapper
 
     public bool IsActive()
     {
-        Control2.GetState(out var state);
+        var hr = Control2.GetState(out var state);
+        if (hr < 0)
+            return false;
         return state != AudioSessionState.Expired;
     }
 
     public bool HasStereoChannels()
     {
-        ChannelVolume.GetChannelCount(out var count);
+        var hr = ChannelVolume.GetChannelCount(out var count);
+        if (hr < 0)
+            return false;
         return count >= 2;
     }
 
     public void SetStereo(float left, float right)
     {
         var ctx = Guid.Empty;
-        ChannelVolume.SetChannelVolume(0, left, ctx);
-        ChannelVolume.SetChannelVolume(1, right, ctx);
+        var hrL = ChannelVolume.SetChannelVolume(0, left, ctx);
+        var hrR = ChannelVolume.SetChannelVolume(1, right, ctx);
+
+        // Fail silently per-session to avoid killing engine loop
+        if (hrL < 0 || hrR < 0)
+        {
+            // Do not throw here; engine loop should remain resilient
+        }
     }
 }

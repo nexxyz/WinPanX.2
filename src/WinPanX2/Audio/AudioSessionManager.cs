@@ -12,6 +12,12 @@ internal sealed class AudioSessionManager : IDisposable
     private IAudioSessionManager2? _sessionManager;
     public string DeviceId { get; private set; } = string.Empty;
 
+    private static void CheckHR(int hr)
+    {
+        if (hr < 0)
+            Marshal.ThrowExceptionForHR(hr);
+    }
+
     public void InitializeForDevice(IMMDevice device)
     {
         _device = device;
@@ -28,9 +34,11 @@ internal sealed class AudioSessionManager : IDisposable
         // Acquire IMMDevice from MMDevice, then Activate IAudioSessionManager2
         var iid = typeof(IAudioSessionManager2).GUID;
         const uint CLSCTX_ALL = 0x17;
+        var hr = _device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
+        CheckHR(hr);
 
-        _device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
-        _sessionManager = (IAudioSessionManager2)obj;
+        _sessionManager = (IAudioSessionManager2)obj
+            ?? throw new InvalidOperationException("IAudioSessionManager2 activation returned null.");
     }
 
     public List<AudioSessionWrapper> GetActiveSessions()
@@ -40,18 +48,21 @@ internal sealed class AudioSessionManager : IDisposable
         if (_sessionManager == null)
             return result;
 
-        _sessionManager.GetSessionEnumerator(out var enumerator);
+        var hrEnum = _sessionManager.GetSessionEnumerator(out var enumerator);
+        CheckHR(hrEnum);
         try
         {
-            enumerator.GetCount(out var count);
+            CheckHR(enumerator.GetCount(out var count));
 
             for (int i = 0; i < count; i++)
             {
-                enumerator.GetSession(i, out var control);
+                var hrSession = enumerator.GetSession(i, out var control);
+                if (hrSession < 0 || control == null)
+                    continue;
                 try
                 {
                     var control2 = (IAudioSessionControl2)control;
-                    control2.GetProcessId(out var pid);
+                    CheckHR(control2.GetProcessId(out var pid));
 
                     var unkControl = Marshal.GetIUnknownForObject(control2);
                     var iidVolume = typeof(IAudioChannelVolume).GUID;

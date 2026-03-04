@@ -7,13 +7,18 @@ namespace WinPanX2.Audio;
 
 internal sealed class CoreAudioDeviceProvider : IAudioDeviceProvider
 {
-    // Notifications temporarily disabled to stabilize All-mode switching
-    // private MMDeviceEnumerator? _notificationEnumerator;
-    // private NAudio.CoreAudioApi.Interfaces.IMMNotificationClient? _notificationClient;
+    // Hot-plug notifications via NAudio (topology only)
+    private NAudio.CoreAudioApi.MMDeviceEnumerator? _notificationEnumerator;
+    private NotificationClient? _notificationClient;
 
     // Notifications disabled; keep event for compatibility
     #pragma warning disable CS0067
     public event Action? TopologyChanged;
+
+    internal void RaiseTopologyChanged()
+    {
+        TopologyChanged?.Invoke();
+    }
     #pragma warning restore CS0067
 
     public CoreAudioDeviceProvider()
@@ -22,14 +27,23 @@ internal sealed class CoreAudioDeviceProvider : IAudioDeviceProvider
 
     public void RegisterNotifications()
     {
-        // Notifications disabled for now
-        return;
+        if (_notificationEnumerator != null)
+            return;
+
+        _notificationEnumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+        _notificationClient = new NotificationClient(this);
+        _notificationEnumerator.RegisterEndpointNotificationCallback(_notificationClient);
     }
 
     public void UnregisterNotifications()
     {
-        // Notifications disabled for now
-        return;
+        if (_notificationEnumerator == null || _notificationClient == null)
+            return;
+
+        _notificationEnumerator.UnregisterEndpointNotificationCallback(_notificationClient);
+        _notificationEnumerator.Dispose();
+        _notificationEnumerator = null;
+        _notificationClient = null;
     }
 
     public string GetDefaultRenderDeviceId()
@@ -80,5 +94,34 @@ internal sealed class CoreAudioDeviceProvider : IAudioDeviceProvider
         {
             Marshal.ReleaseComObject(enumerator);
         }
+    }
+}
+
+// Only raises topology events. No COM session work here.
+internal sealed class NotificationClient : NAudio.CoreAudioApi.Interfaces.IMMNotificationClient
+{
+    private readonly CoreAudioDeviceProvider _provider;
+
+    public NotificationClient(CoreAudioDeviceProvider provider)
+    {
+        _provider = provider;
+    }
+
+    public void OnDeviceStateChanged(string deviceId, NAudio.CoreAudioApi.DeviceState newState)
+        => _provider.RaiseTopologyChanged();
+
+    public void OnDeviceAdded(string pwstrDeviceId)
+        => _provider.RaiseTopologyChanged();
+
+    public void OnDeviceRemoved(string deviceId)
+        => _provider.RaiseTopologyChanged();
+
+    public void OnDefaultDeviceChanged(NAudio.CoreAudioApi.DataFlow flow,
+        NAudio.CoreAudioApi.Role role, string defaultDeviceId)
+        => _provider.RaiseTopologyChanged();
+
+    public void OnPropertyValueChanged(string pwstrDeviceId, NAudio.CoreAudioApi.PropertyKey key)
+    {
+        // ignore
     }
 }
