@@ -64,6 +64,27 @@ After installation:
 
 Most changes apply immediately. No ritual restarts required.
 
+### Device Modes
+
+- **Default mode** spatializes audio on the current Windows default output device.
+  - If you change the default output in Windows settings, WinPan X.2 automatically
+    reinitializes and follows the new default device.
+
+- **All mode** spatializes audio across all currently active stereo (2‑channel)
+  render devices.
+  - When devices are added, removed, enabled, disabled, or when the default device
+    changes, WinPan X.2 automatically rebuilds its device list.
+
+### Device Changes
+
+WinPan X.2 automatically adapts when you:
+
+- Plug in or unplug audio devices (USB, Bluetooth, HDMI, etc.)
+- Enable or disable devices in Windows sound settings
+- Change the Windows default output device
+
+No manual restart is required.
+
 ---
 
 ## Configuration
