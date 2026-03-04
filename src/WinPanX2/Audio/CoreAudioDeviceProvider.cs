@@ -64,9 +64,21 @@ internal sealed class CoreAudioDeviceProvider : IAudioDeviceProvider
         return result;
     }
 
-    public MMDevice GetDeviceById(string deviceId)
+    public IMMDevice GetDeviceById(string deviceId)
     {
-        var enumerator = new MMDeviceEnumerator();
-        return enumerator.GetDevice(deviceId);
+        var clsid = new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E");
+        var type = Type.GetTypeFromCLSID(clsid, throwOnError: true)!;
+
+        var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(type)!;
+
+        try
+        {
+            enumerator.GetDevice(deviceId, out var device);
+            return device;
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(enumerator);
+        }
     }
 }
