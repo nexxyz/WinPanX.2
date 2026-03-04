@@ -64,33 +64,9 @@ internal sealed class CoreAudioDeviceProvider : IAudioDeviceProvider
         return result;
     }
 
-    public IMMDevice GetDeviceById(string deviceId)
+    public MMDevice GetDeviceById(string deviceId)
     {
-        // Use NAudio for device lookup, then obtain underlying IMMDevice
-        var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
-        var mmDevice = enumerator.GetDevice(deviceId);
-
-        var unk = Marshal.GetIUnknownForObject(mmDevice);
-        try
-        {
-            var iid = typeof(IMMDevice).GUID;
-            var hr = Marshal.QueryInterface(unk, ref iid, out var ptr);
-
-            if (hr != 0 || ptr == IntPtr.Zero)
-                throw new InvalidOperationException("Failed to acquire IMMDevice from MMDevice.");
-
-            try
-            {
-                return (IMMDevice)Marshal.GetObjectForIUnknown(ptr);
-            }
-            finally
-            {
-                Marshal.Release(ptr);
-            }
-        }
-        finally
-        {
-            Marshal.Release(unk);
-        }
+        var enumerator = new MMDeviceEnumerator();
+        return enumerator.GetDevice(deviceId);
     }
 }

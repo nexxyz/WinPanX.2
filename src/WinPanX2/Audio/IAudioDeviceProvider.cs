@@ -1,4 +1,4 @@
-using WinPanX2.Audio.Interop;
+using NAudio.CoreAudioApi;
 
 namespace WinPanX2.Audio;
 
@@ -6,5 +6,5 @@ internal interface IAudioDeviceProvider
 {
     string GetDefaultRenderDeviceId();
     IEnumerable<string> GetActiveRenderDeviceIds();
-    IMMDevice GetDeviceById(string deviceId);
+    MMDevice GetDeviceById(string deviceId);
 }
