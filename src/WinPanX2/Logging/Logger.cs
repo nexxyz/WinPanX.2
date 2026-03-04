@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+
 namespace WinPanX2.Logging;
 
 internal static class Logger
@@ -6,6 +9,8 @@ internal static class Logger
     private static string? _logPath;
     private static StreamWriter? _writer;
     private const long MaxLogSizeBytes = 500 * 1024; // 500 KB
+
+    public static LogLevel MinimumLevel { get; set; } = LogLevel.Info;
 
     public static void Initialize(string path)
     {
@@ -17,12 +22,16 @@ internal static class Logger
         };
     }
 
-    public static void Info(string message) => Write("INFO", message);
-    public static void Error(string message) => Write("ERROR", message);
+    public static void Trace(string message) => Write(LogLevel.Trace, message);
+    public static void Debug(string message) => Write(LogLevel.Debug, message);
+    public static void Info(string message)  => Write(LogLevel.Info, message);
+    public static void Warn(string message)  => Write(LogLevel.Warn, message);
+    public static void Error(string message) => Write(LogLevel.Error, message);
 
-    private static void Write(string level, string message)
+    private static void Write(LogLevel level, string message)
     {
         if (_writer == null) return;
+        if (level < MinimumLevel) return;
 
         lock (_lock)
         {

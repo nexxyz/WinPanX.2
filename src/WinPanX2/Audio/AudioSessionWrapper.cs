@@ -19,7 +19,7 @@ internal sealed class AudioSessionWrapper
     public bool IsActive()
     {
         Control2.GetState(out var state);
-        return state == AudioSessionState.Active;
+        return state != AudioSessionState.Expired;
     }
 
     public bool HasStereoChannels()
@@ -31,7 +31,7 @@ internal sealed class AudioSessionWrapper
     public void SetStereo(float left, float right)
     {
         var ctx = Guid.Empty;
-        ChannelVolume.SetChannelVolume(0, left, ref ctx);
-        ChannelVolume.SetChannelVolume(1, right, ref ctx);
+        ChannelVolume.SetChannelVolume(0, left, ctx);
+        ChannelVolume.SetChannelVolume(1, right, ctx);
     }
 }

@@ -10,19 +10,19 @@ internal class TrayApp : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly SpatialAudioEngine _engine;
     private readonly AppConfig _config;
+    private bool _initializing;
 
     public TrayApp(AppConfig config)
     {
         _config = config;
         _engine = new SpatialAudioEngine(config);
-
-        var exeDir = Path.GetDirectoryName(Application.ExecutablePath)!;
-        var iconPath = Path.Combine(exeDir, "WinPanX.ico");
+        _initializing = true;
 
         Icon trayIcon;
         try
         {
-            trayIcon = new Icon(iconPath);
+            trayIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath)
+                       ?? SystemIcons.Application;
         }
         catch
         {
@@ -37,9 +37,11 @@ internal class TrayApp : ApplicationContext
         };
 
         _notifyIcon.ContextMenuStrip = BuildMenu();
-
-        // Start spatial audio by default
+        
+        // Start spatial audio after full initialization
         _engine.Start();
+
+        _initializing = false;
     }
 
     private ContextMenuStrip BuildMenu()
@@ -49,13 +51,17 @@ internal class TrayApp : ApplicationContext
         var enableItem = new ToolStripMenuItem("Enable Spatial Audio")
         {
             CheckOnClick = true,
-            Checked = true
+            Checked = false
         };
         enableItem.CheckedChanged += (_, _) =>
         {
+            if (_initializing) return;
             if (enableItem.Checked) _engine.Start();
             else _engine.Stop();
         };
+
+        // Reflect initial state without triggering logic
+        enableItem.Checked = true;
 
         var startupItem = new ToolStripMenuItem("Start with Windows")
         {

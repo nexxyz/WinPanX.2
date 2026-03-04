@@ -31,14 +31,22 @@ ArchitecturesInstallIn64BitMode={#ArchFlag}
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "..\src\WinPanX2\bin\Release\net8.0-windows\win-x64\publish\WinPanX2.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\src\WinPanX2\bin\Release\net8.0-windows\win-x64\publish\*"; \
+    DestDir: "{app}"; \
+    Flags: recursesubdirs ignoreversion
 
 [Icons]
 Name: "{group}\WinPan X.2"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\WinPan X.2"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Tasks]
-Name: "desktopicon"; Description: "Create Desktop Icon"; GroupDescription: "Additional icons:"
+Name: "desktopicon"; Description: "Create Desktop Icon"; GroupDescription: "Additional options:"
+Name: "startup"; Description: "Launch WinPan X.2 on Windows startup"; GroupDescription: "Additional options:"; Flags: checkedonce
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch WinPan X.2"; Flags: nowait postinstall skipifsilent
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
+    ValueType: string; ValueName: "WinPanX2"; ValueData: """{app}\{#MyAppExeName}"""; \
+    Tasks: startup; Flags: uninsdeletevalue
