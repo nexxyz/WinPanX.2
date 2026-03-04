@@ -14,7 +14,7 @@ jobs:
 
     - name: Validate Installer Architecture Flag
       run: |
-        $content = Get-Content installer/WinPanX2.iss
+        $content = Get-Content installer/WinPanX2.iss -Raw
         if ($content -notmatch 'ArchitecturesInstallIn64BitMode=\{#ArchFlag\}') {
           Write-Error "Installer must use preprocessor ArchFlag."
           exit 1
