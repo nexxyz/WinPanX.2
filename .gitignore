@@ -13,6 +13,7 @@
 
 # Logs
 *.log
+_logs/
 
 # OS
 Thumbs.db
