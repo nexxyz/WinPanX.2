@@ -1,27 +1,20 @@
 using System;
+using System.Runtime.InteropServices;
 using WinPanX2.Audio.Interop;
 
 namespace WinPanX2.Audio;
 
-internal sealed class AudioSessionWrapper
+internal sealed class AudioSessionWrapper : IDisposable
 {
     public int ProcessId { get; }
-    public IAudioSessionControl2 Control2 { get; }
     public IAudioChannelVolume ChannelVolume { get; }
 
-    public AudioSessionWrapper(int pid, IAudioSessionControl2 control2, IAudioChannelVolume volume)
+    private bool _disposed;
+
+    public AudioSessionWrapper(int pid, IAudioChannelVolume volume)
     {
         ProcessId = pid;
-        Control2 = control2;
         ChannelVolume = volume;
-    }
-
-    public bool IsActive()
-    {
-        var hr = Control2.GetState(out var state);
-        if (hr < 0)
-            return false;
-        return state != AudioSessionState.Expired;
     }
 
     public bool HasStereoChannels()
@@ -42,6 +35,24 @@ internal sealed class AudioSessionWrapper
         if (hrL < 0 || hrR < 0)
         {
             // Do not throw here; engine loop should remain resilient
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+
+        try
+        {
+            if (ChannelVolume != null)
+                Marshal.ReleaseComObject(ChannelVolume);
+        }
+        catch
+        {
+            // best-effort COM cleanup
         }
     }
 }

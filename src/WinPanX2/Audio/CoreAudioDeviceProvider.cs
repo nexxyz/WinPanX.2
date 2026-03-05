@@ -49,8 +49,8 @@ internal sealed class CoreAudioDeviceProvider : IAudioDeviceProvider
     public string GetDefaultRenderDeviceId()
     {
         // Use NAudio for default device resolution (stable)
-        var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
-        var device = enumerator.GetDefaultAudioEndpoint(
+        using var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+        using var device = enumerator.GetDefaultAudioEndpoint(
             NAudio.CoreAudioApi.DataFlow.Render,
             NAudio.CoreAudioApi.Role.Multimedia);
 

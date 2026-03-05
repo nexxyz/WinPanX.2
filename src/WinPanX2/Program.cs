@@ -61,6 +61,13 @@ static class Program
         }
 
         Directory.CreateDirectory(Paths.AppDirectory);
+        try
+        {
+            var dir = Path.GetDirectoryName(logPath);
+            if (!string.IsNullOrWhiteSpace(dir))
+                Directory.CreateDirectory(dir);
+        }
+        catch { }
 
         Logger.Initialize(logPath);
         Logger.Info("WinPan X.2 starting (CLI --test-all)");
@@ -106,6 +113,13 @@ static class Program
         }
 
         Directory.CreateDirectory(Paths.AppDirectory);
+        try
+        {
+            var dir = Path.GetDirectoryName(logPath);
+            if (!string.IsNullOrWhiteSpace(dir))
+                Directory.CreateDirectory(dir);
+        }
+        catch { }
 
         Logger.Initialize(logPath);
         Logger.Info("WinPan X.2 starting (CLI --test-sequence)");

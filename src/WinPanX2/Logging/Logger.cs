@@ -14,12 +14,20 @@ internal static class Logger
 
     public static void Initialize(string path)
     {
-        _logPath = path;
-        RotateIfNeeded(path);
-        _writer = new StreamWriter(new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read))
+        lock (_lock)
         {
-            AutoFlush = true
-        };
+            _logPath = path;
+
+            try
+            {
+                RotateIfNeededLocked(path);
+                EnsureWriterLocked(path);
+            }
+            catch
+            {
+                // Logging must never throw
+            }
+        }
     }
 
     public static void Trace(string message) => Write(LogLevel.Trace, message);
@@ -30,15 +38,24 @@ internal static class Logger
 
     private static void Write(LogLevel level, string message)
     {
-        if (_writer == null) return;
         if (level < MinimumLevel) return;
 
         lock (_lock)
         {
-            if (_logPath != null)
-                RotateIfNeeded(_logPath);
+            try
+            {
+                if (_logPath == null)
+                    return;
 
-            _writer.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}][{level}] {message}");
+                RotateIfNeededLocked(_logPath);
+                EnsureWriterLocked(_logPath);
+
+                _writer?.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}][{level}] {message}");
+            }
+            catch
+            {
+                // Logging must never throw
+            }
         }
     }
 
@@ -51,7 +68,18 @@ internal static class Logger
         }
     }
 
-    private static void RotateIfNeeded(string path)
+    private static void EnsureWriterLocked(string path)
+    {
+        if (_writer != null)
+            return;
+
+        _writer = new StreamWriter(new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+        {
+            AutoFlush = true
+        };
+    }
+
+    private static void RotateIfNeededLocked(string path)
     {
         try
         {
@@ -68,6 +96,8 @@ internal static class Logger
                 File.Delete(backup);
 
             File.Move(path, backup);
+
+            EnsureWriterLocked(path);
         }
         catch
         {

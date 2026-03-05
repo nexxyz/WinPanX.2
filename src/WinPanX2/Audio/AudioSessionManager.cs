@@ -20,6 +20,18 @@ internal sealed class AudioSessionManager : IDisposable
 
     public void InitializeForDevice(IMMDevice device)
     {
+        if (_sessionManager != null)
+        {
+            try { Marshal.ReleaseComObject(_sessionManager); } catch { }
+            _sessionManager = null;
+        }
+
+        if (_device != null)
+        {
+            try { Marshal.ReleaseComObject(_device); } catch { }
+            _device = null;
+        }
+
         _device = device;
 
         if (_device == null)
@@ -62,6 +74,11 @@ internal sealed class AudioSessionManager : IDisposable
                 try
                 {
                     var control2 = (IAudioSessionControl2)control;
+
+                    var hrState = control2.GetState(out var state);
+                    if (hrState < 0 || state == AudioSessionState.Expired)
+                        continue;
+
                     CheckHR(control2.GetProcessId(out var pid));
 
                     var unkControl = Marshal.GetIUnknownForObject(control2);
@@ -75,10 +92,7 @@ internal sealed class AudioSessionManager : IDisposable
                     var volume = (IAudioChannelVolume)Marshal.GetObjectForIUnknown(volumePtr);
                     Marshal.Release(volumePtr);
 
-                    var wrapper = new AudioSessionWrapper((int)pid, control2, volume);
-
-                    if (wrapper.IsActive())
-                        result.Add(wrapper);
+                    result.Add(new AudioSessionWrapper((int)pid, volume));
                 }
                 finally
                 {
@@ -99,6 +113,15 @@ internal sealed class AudioSessionManager : IDisposable
     public void Dispose()
     {
         if (_sessionManager != null)
-            Marshal.ReleaseComObject(_sessionManager);
+        {
+            try { Marshal.ReleaseComObject(_sessionManager); } catch { }
+            _sessionManager = null;
+        }
+
+        if (_device != null)
+        {
+            try { Marshal.ReleaseComObject(_device); } catch { }
+            _device = null;
+        }
     }
 }
