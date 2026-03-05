@@ -27,7 +27,7 @@ internal static class ConfigLoader
         }
     }
 
-    private static void Save(string path, AppConfig config)
+    public static void Save(string path, AppConfig config)
     {
         var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
         {

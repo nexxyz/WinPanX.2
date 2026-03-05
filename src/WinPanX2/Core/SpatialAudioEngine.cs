@@ -17,6 +17,8 @@ internal sealed class SpatialAudioEngine : IDisposable
 
     private readonly Dictionary<string, AudioSessionManager> _deviceManagers = new();
     private readonly ConcurrentDictionary<(string deviceId, int pid), double> _smoothedPan = new();
+    private readonly ConcurrentDictionary<(string deviceId, int pid), long> _smoothedPanLastSeenTick = new();
+    private long _lastSmoothedPanPruneTick;
     private HashSet<string> _excludedSet = new(StringComparer.OrdinalIgnoreCase);
     private string _excludedSignature = string.Empty;
     // Window handles are resolved fresh each loop to ensure dynamic tracking
@@ -25,6 +27,8 @@ internal sealed class SpatialAudioEngine : IDisposable
     private Task? _loopTask;
 
     public bool IsEnabled { get; private set; }
+
+    public void ReapplyCurrentPositions() => ApplyCurrentPositions();
 
     public SpatialAudioEngine(AppConfig config, IAudioDeviceProvider? provider = null)
     {
@@ -78,6 +82,8 @@ internal sealed class SpatialAudioEngine : IDisposable
         _cts = new CancellationTokenSource();
         _loopTask = Task.Run(() => Loop(_cts.Token), _cts.Token);
 
+        _lastSmoothedPanPruneTick = Environment.TickCount64;
+
         IsEnabled = true;
         Logger.Info("Spatial engine started");
 
@@ -104,6 +110,7 @@ internal sealed class SpatialAudioEngine : IDisposable
 
         ResetAllSessions();
         _smoothedPan.Clear();
+        _smoothedPanLastSeenTick.Clear();
 
         if (_deviceProvider is CoreAudioDeviceProvider realProvider)
         {
@@ -117,10 +124,16 @@ internal sealed class SpatialAudioEngine : IDisposable
 
     private void Loop(CancellationToken token)
     {
+        const int SmoothedPanPruneIntervalMs = 5000;
+        const int SmoothedPanEntryTtlMs = 60_000;
+
         while (!token.IsCancellationRequested)
         {
             try
             {
+                var nowTick = Environment.TickCount64;
+                var shouldPrune = nowTick - _lastSmoothedPanPruneTick >= SmoothedPanPruneIntervalMs;
+
                 // Refresh exclusion set only if config changed
                 var currentList = _config.ExcludedProcesses ?? new List<string>();
                 var signature = string.Join('|',
@@ -140,48 +153,74 @@ internal sealed class SpatialAudioEngine : IDisposable
                 {
                     var sessions = manager.GetActiveSessions();
 
-                    foreach (var session in sessions)
+                    try
                     {
-                        if (!session.HasStereoChannels())
-                            continue;
-
-                        var processName = ProcessHelper.GetProcessName(session.ProcessId);
-                        if (processName != null && _excludedSet.Contains(processName))
+                        foreach (var session in sessions)
                         {
-                            Logger.Debug($"Excluded process: {processName}");
-                            session.SetStereo(1f, 1f);
-                            continue;
+                            if (!session.HasStereoChannels())
+                                continue;
+
+                            var processName = ProcessHelper.GetProcessName(session.ProcessId);
+                            if (processName != null && _excludedSet.Contains(processName))
+                            {
+                                Logger.Debug($"Excluded process: {processName}");
+                                session.SetStereo(1f, 1f);
+                                continue;
+                            }
+
+                            var key = (deviceId, session.ProcessId);
+                            _smoothedPanLastSeenTick[key] = nowTick;
+
+                            var resolved = WindowResolver.ResolveForProcess(
+                                session.ProcessId,
+                                _config.BindingMode == "FollowMostRecent");
+
+                            if (resolved == null)
+                                continue;
+
+                            var hwnd = resolved.Handle;
+
+                            if (!NativeMethods.GetWindowRect(hwnd, out var rect))
+                                continue;
+
+                            var centerX = rect.Left + (rect.Right - rect.Left) / 2;
+                            var normalized = VirtualDesktopMapper.MapToNormalized(centerX);
+
+                            var prev = _smoothedPan.GetOrAdd(key, normalized);
+                            var alpha = Math.Clamp(_config.SmoothingFactor, 0.0, 1.0);
+                            var smoothed = prev + (normalized - prev) * alpha;
+
+                            _smoothedPan[key] = smoothed;
+
+                            var biased = ApplyCenterBias(smoothed, _config.CenterBias);
+                            biased *= Math.Clamp(_config.MaxPan, 0.0, 1.0);
+
+                            var angle = (biased + 1.0) * Math.PI / 4.0;
+                            var left = (float)Math.Cos(angle);
+                            var right = (float)Math.Sin(angle);
+
+                            session.SetStereo(left, right);
                         }
-
-                        var key = (deviceId, session.ProcessId);
-
-                        var resolved = WindowResolver.ResolveForProcess(
-                            session.ProcessId,
-                            _config.BindingMode == "FollowMostRecent");
-
-                        if (resolved == null)
-                            continue;
-
-                        var hwnd = resolved.Handle;
-
-                        if (!NativeMethods.GetWindowRect(hwnd, out var rect))
-                            continue;
-
-                        var centerX = rect.Left + (rect.Right - rect.Left) / 2;
-                        var normalized = VirtualDesktopMapper.MapToNormalized(centerX);
-
-                        var prev = _smoothedPan.GetOrAdd(key, normalized);
-                        var alpha = Math.Clamp(_config.SmoothingFactor, 0.0, 1.0);
-                        var smoothed = prev + (normalized - prev) * alpha;
-
-                        _smoothedPan[key] = smoothed;
-
-                        var angle = (smoothed + 1.0) * Math.PI / 4.0;
-                        var left = (float)Math.Cos(angle);
-                        var right = (float)Math.Sin(angle);
-
-                        session.SetStereo(left, right);
                     }
+                    finally
+                    {
+                        foreach (var session in sessions)
+                            session.Dispose();
+                    }
+                }
+
+                if (shouldPrune)
+                {
+                    foreach (var kvp in _smoothedPanLastSeenTick)
+                    {
+                        if (nowTick - kvp.Value <= SmoothedPanEntryTtlMs)
+                            continue;
+
+                        _smoothedPanLastSeenTick.TryRemove(kvp.Key, out _);
+                        _smoothedPan.TryRemove(kvp.Key, out _);
+                    }
+
+                    _lastSmoothedPanPruneTick = nowTick;
                 }
             }
             catch (Exception ex)
@@ -201,10 +240,18 @@ internal sealed class SpatialAudioEngine : IDisposable
             foreach (var manager in _deviceManagers.Values)
             {
                 var sessions = manager.GetActiveSessions();
-                foreach (var session in sessions)
+                try
                 {
-                    if (session.HasStereoChannels())
-                        session.SetStereo(1f, 1f);
+                    foreach (var session in sessions)
+                    {
+                        if (session.HasStereoChannels())
+                            session.SetStereo(1f, 1f);
+                    }
+                }
+                finally
+                {
+                    foreach (var session in sessions)
+                        session.Dispose();
                 }
             }
         }
@@ -233,6 +280,7 @@ internal sealed class SpatialAudioEngine : IDisposable
             Stop();
 
         _smoothedPan.Clear();
+        _smoothedPanLastSeenTick.Clear();
 
         _deviceMode = mode;
 
@@ -298,36 +346,49 @@ internal sealed class SpatialAudioEngine : IDisposable
         foreach (var (deviceId, manager) in _deviceManagers)
         {
             var sessions = manager.GetActiveSessions();
+            var nowTick = Environment.TickCount64;
 
-            foreach (var session in sessions)
+            try
             {
-                if (!session.HasStereoChannels())
-                    continue;
-
-                var processName = ProcessHelper.GetProcessName(session.ProcessId);
-                if (processName != null && _excludedSet.Contains(processName))
+                foreach (var session in sessions)
                 {
-                    session.SetStereo(1f, 1f);
-                    continue;
+                    if (!session.HasStereoChannels())
+                        continue;
+
+                    var processName = ProcessHelper.GetProcessName(session.ProcessId);
+                    if (processName != null && _excludedSet.Contains(processName))
+                    {
+                        session.SetStereo(1f, 1f);
+                        continue;
+                    }
+
+                    var resolved = WindowResolver.ResolveForProcess(
+                        session.ProcessId,
+                        _config.BindingMode == "FollowMostRecent");
+
+                    if (resolved == null)
+                        continue;
+
+                    var normalized = VirtualDesktopMapper.MapToNormalized(resolved.CenterX);
+
+                    var biased = ApplyCenterBias(normalized, _config.CenterBias);
+                    biased *= Math.Clamp(_config.MaxPan, 0.0, 1.0);
+
+                    var angle = (biased + 1.0) * Math.PI / 4.0;
+                    var left = (float)Math.Cos(angle);
+                    var right = (float)Math.Sin(angle);
+
+                    session.SetStereo(left, right);
+
+                    var key = (deviceId, session.ProcessId);
+                    _smoothedPan[key] = normalized;
+                    _smoothedPanLastSeenTick[key] = nowTick;
                 }
-
-                var resolved = WindowResolver.ResolveForProcess(
-                    session.ProcessId,
-                    _config.BindingMode == "FollowMostRecent");
-
-                if (resolved == null)
-                    continue;
-
-                var normalized = VirtualDesktopMapper.MapToNormalized(resolved.CenterX);
-
-                var angle = (normalized + 1.0) * Math.PI / 4.0;
-                var left = (float)Math.Cos(angle);
-                var right = (float)Math.Sin(angle);
-
-                session.SetStereo(left, right);
-
-                var key = (deviceId, session.ProcessId);
-                _smoothedPan[key] = normalized;
+            }
+            finally
+            {
+                foreach (var session in sessions)
+                    session.Dispose();
             }
         }
     }
@@ -344,7 +405,28 @@ internal sealed class SpatialAudioEngine : IDisposable
 
         _deviceManagers.Clear();
         _smoothedPan.Clear();
+        _smoothedPanLastSeenTick.Clear();
 
         Start();
+    }
+
+    private static double ApplyCenterBias(double normalized, double bias)
+    {
+        var x = Math.Clamp(normalized, -1.0, 1.0);
+        var b = Math.Clamp(bias, 0.0, 1.0);
+        if (b <= 0.0)
+            return x;
+
+        var ax = Math.Abs(x);
+
+        // Combine two effects:
+        // - Nonlinear curve pulls midpoints toward center
+        // - Max magnitude cap prevents hard panning even at screen edges
+        // Tuned so the tray presets (Medium/Strong) are clearly noticeable.
+        var exp = 1.0 + (b * 6.0);          // b=1 -> exp=7 (very strong pull)
+        var maxMag = 1.0 - (b * 0.8);       // b=1 -> 0.2 (hard cap)
+
+        var y = Math.Pow(ax, exp) * maxMag;
+        return x < 0 ? -y : y;
     }
 }
