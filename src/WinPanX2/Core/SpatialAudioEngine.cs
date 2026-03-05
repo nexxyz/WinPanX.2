@@ -20,6 +20,12 @@ internal sealed class SpatialAudioEngine : IDisposable
     private readonly ConcurrentDictionary<(string deviceId, int pid), double> _smoothedPan = new();
     private readonly ConcurrentDictionary<(string deviceId, int pid), long> _smoothedPanLastSeenTick = new();
     private readonly ConcurrentDictionary<(string deviceId, int pid), IntPtr> _boundHwnd = new();
+
+    // Used only for FollowMostRecentOpened mode.
+    private readonly ConcurrentDictionary<IntPtr, long> _windowFirstSeenTick = new();
+    private readonly ConcurrentDictionary<IntPtr, long> _windowLastSeenTick = new();
+    private long _lastOpenedWindowPruneTick;
+    private long _lastOpenedWindowTrackTick;
     private long _lastSmoothedPanPruneTick;
     private HashSet<string> _excludedSet = new(StringComparer.OrdinalIgnoreCase);
     private string _excludedSignature = string.Empty;
@@ -31,6 +37,16 @@ internal sealed class SpatialAudioEngine : IDisposable
     public bool IsEnabled { get; private set; }
 
     public void ReapplyCurrentPositions() => ApplyCurrentPositions();
+
+    public void ClearWindowBindings() => _boundHwnd.Clear();
+
+    private void ClearOpenedWindowTracking()
+    {
+        _windowFirstSeenTick.Clear();
+        _windowLastSeenTick.Clear();
+        _lastOpenedWindowPruneTick = Environment.TickCount64;
+        _lastOpenedWindowTrackTick = _lastOpenedWindowPruneTick;
+    }
 
     public SpatialAudioEngine(AppConfig config, IAudioDeviceProvider? provider = null)
     {
@@ -114,6 +130,7 @@ internal sealed class SpatialAudioEngine : IDisposable
         _smoothedPan.Clear();
         _smoothedPanLastSeenTick.Clear();
         _boundHwnd.Clear();
+        ClearOpenedWindowTracking();
 
         if (_deviceProvider is CoreAudioDeviceProvider realProvider)
         {
@@ -129,13 +146,26 @@ internal sealed class SpatialAudioEngine : IDisposable
     {
         const int SmoothedPanPruneIntervalMs = 5000;
         const int SmoothedPanEntryTtlMs = 60_000;
+        const int OpenedWindowPruneIntervalMs = 5000;
+        const int OpenedWindowEntryTtlMs = 120_000;
 
         while (!token.IsCancellationRequested)
         {
             try
             {
+                var windowSnapshot = WindowResolver.CaptureSnapshot();
+                var mapping = VirtualDesktopMapper.Capture();
+
                 var nowTick = Environment.TickCount64;
                 var shouldPrune = nowTick - _lastSmoothedPanPruneTick >= SmoothedPanPruneIntervalMs;
+                var shouldPruneOpened = nowTick - _lastOpenedWindowPruneTick >= OpenedWindowPruneIntervalMs;
+
+                var activeSessionExes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                Dictionary<string, WindowInfo?>? openedModeCache = null;
+                var isOpenedMode = string.Equals(_config.BindingMode, "FollowMostRecentOpened", StringComparison.Ordinal);
+                if (isOpenedMode)
+                    openedModeCache = new Dictionary<string, WindowInfo?>(StringComparer.OrdinalIgnoreCase);
 
                 // Refresh exclusion set only if config changed
                 var currentList = _config.ExcludedProcesses ?? new List<string>();
@@ -171,14 +201,17 @@ internal sealed class SpatialAudioEngine : IDisposable
                                 continue;
                             }
 
+                            if (!string.IsNullOrWhiteSpace(processName))
+                                activeSessionExes.Add(processName);
+
                             var key = (deviceId, session.ProcessId);
                             _smoothedPanLastSeenTick[key] = nowTick;
 
-                            if (!TryGetWindowForSession(key, session.ProcessId, out var rect))
+                            if (!TryGetWindowForSession(windowSnapshot, nowTick, openedModeCache, key, session.ProcessId, out var rect))
                                 continue;
 
                             var centerX = rect.Left + (rect.Right - rect.Left) / 2;
-                            var normalized = VirtualDesktopMapper.MapToNormalized(centerX);
+                            var normalized = VirtualDesktopMapper.MapToNormalized(centerX, mapping);
 
                             var prev = _smoothedPan.GetOrAdd(key, normalized);
                             var alpha = Math.Clamp(_config.SmoothingFactor, 0.0, 1.0);
@@ -216,6 +249,26 @@ internal sealed class SpatialAudioEngine : IDisposable
                     }
 
                     _lastSmoothedPanPruneTick = nowTick;
+                }
+
+                // Track eligible windows continuously so FollowMostRecentOpened behaves
+                // consistently even when enabled after windows already exist.
+                if (activeSessionExes.Count > 0)
+                {
+                    // In Opened mode, track every tick for responsiveness.
+                    // Otherwise, track at a lower cadence to reduce overhead.
+                    var interval = isOpenedMode ? 0 : 250;
+                    if (nowTick - _lastOpenedWindowTrackTick >= interval)
+                    {
+                        TrackOpenedWindows(windowSnapshot, nowTick, activeSessionExes);
+                        _lastOpenedWindowTrackTick = nowTick;
+                    }
+                }
+
+                if (shouldPruneOpened)
+                {
+                    PruneOpenedWindowTracking(nowTick, OpenedWindowEntryTtlMs);
+                    _lastOpenedWindowPruneTick = nowTick;
                 }
             }
             catch (Exception ex)
@@ -338,10 +391,20 @@ internal sealed class SpatialAudioEngine : IDisposable
     // Force immediate recalculation without smoothing
     private void ApplyCurrentPositions()
     {
+        var windowSnapshot = WindowResolver.CaptureSnapshot();
+        var mapping = VirtualDesktopMapper.Capture();
+        var nowTick = Environment.TickCount64;
+
+        Dictionary<string, WindowInfo?>? openedModeCache = null;
+        var isOpenedMode = string.Equals(_config.BindingMode, "FollowMostRecentOpened", StringComparison.Ordinal);
+        if (isOpenedMode)
+            openedModeCache = new Dictionary<string, WindowInfo?>(StringComparer.OrdinalIgnoreCase);
+
+        var activeSessionExes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var (deviceId, manager) in _deviceManagers)
         {
             var sessions = manager.GetActiveSessions();
-            var nowTick = Environment.TickCount64;
 
             try
             {
@@ -357,14 +420,17 @@ internal sealed class SpatialAudioEngine : IDisposable
                         continue;
                     }
 
+                    if (!string.IsNullOrWhiteSpace(processName))
+                        activeSessionExes.Add(processName);
+
                     var key = (deviceId, session.ProcessId);
                     _smoothedPanLastSeenTick[key] = nowTick;
 
-                    if (!TryGetWindowForSession(key, session.ProcessId, out var rect))
+                    if (!TryGetWindowForSession(windowSnapshot, nowTick, openedModeCache, key, session.ProcessId, out var rect))
                         continue;
 
                     var centerX = rect.Left + (rect.Right - rect.Left) / 2;
-                    var normalized = VirtualDesktopMapper.MapToNormalized(centerX);
+                    var normalized = VirtualDesktopMapper.MapToNormalized(centerX, mapping);
 
                     var biased = ApplyCenterBias(normalized, _config.CenterBias);
                     biased *= Math.Clamp(_config.MaxPan, 0.0, 1.0);
@@ -384,18 +450,29 @@ internal sealed class SpatialAudioEngine : IDisposable
                     session.Dispose();
             }
         }
+
+        if (activeSessionExes.Count > 0)
+        {
+            var interval = isOpenedMode ? 0 : 250;
+            if (nowTick - _lastOpenedWindowTrackTick >= interval)
+            {
+                TrackOpenedWindows(windowSnapshot, nowTick, activeSessionExes);
+                _lastOpenedWindowTrackTick = nowTick;
+            }
+        }
     }
 
-    private bool TryGetWindowForSession((string deviceId, int pid) key, int pid, out RECT rect)
+    private bool TryGetWindowForSession(WindowResolver.Snapshot snapshot, long nowTick, Dictionary<string, WindowInfo?>? openedModeCache, (string deviceId, int pid) key, int pid, out RECT rect)
     {
         rect = default;
 
         var mode = _config.BindingMode;
-        var follow = string.Equals(mode, "FollowMostRecent", StringComparison.Ordinal);
+        var followActive = string.Equals(mode, "FollowMostRecent", StringComparison.Ordinal);
+        var followOpened = string.Equals(mode, "FollowMostRecentOpened", StringComparison.Ordinal);
 
         // Sticky means we keep the first valid binding for this (device, pid)
         // until the window becomes invalid (closed/invisible), then we rebind.
-        if (!follow)
+        if (!followActive && !followOpened)
         {
             if (_boundHwnd.TryGetValue(key, out var bound) && bound != IntPtr.Zero)
             {
@@ -411,15 +488,159 @@ internal sealed class SpatialAudioEngine : IDisposable
         // - sticky mode has no valid binding yet (first bind/rebind)
         // Even in Sticky mode, picking the foreground window for the initial bind
         // avoids accidentally binding to an arbitrary same-exe window.
-        var resolved = WindowResolver.ResolveForProcess(pid, preferForeground: true);
+        if (followOpened)
+        {
+            if (TryGetMostRecentlyOpenedWindowRect(snapshot, nowTick, openedModeCache, pid, out rect))
+                return true;
+
+            // Fallback: resolve without requiring foreground.
+            var fallback = snapshot.ResolveForProcess(pid, preferForeground: false);
+            if (fallback == null)
+                return false;
+
+            rect = fallback.Rect;
+            return true;
+        }
+
+        // Follow most recently active window.
+        var resolved = snapshot.ResolveForProcess(pid, preferForeground: true);
         if (resolved == null)
             return false;
 
-        // Persist binding for sticky mode.
-        if (!follow)
+        if (!followActive)
             _boundHwnd[key] = resolved.Handle;
 
-        return TryGetValidRect(resolved.Handle, out rect);
+        rect = resolved.Rect;
+        return true;
+    }
+
+    private bool TryGetMostRecentlyOpenedWindowRect(WindowResolver.Snapshot snapshot, long nowTick, Dictionary<string, WindowInfo?>? openedModeCache, int sessionPid, out RECT rect)
+    {
+        rect = default;
+
+        var exe = snapshot.GetProcessName(sessionPid);
+        if (string.IsNullOrWhiteSpace(exe))
+            return false;
+
+        if (openedModeCache != null && openedModeCache.TryGetValue(exe, out var cached))
+        {
+            if (cached == null)
+                return false;
+
+            rect = cached.Rect;
+            return true;
+        }
+
+        WindowInfo? best = null;
+        long bestFirstSeen = long.MinValue;
+        long bestHandle = long.MinValue;
+        long bestArea = long.MinValue;
+
+        foreach (var w in snapshot.Windows)
+        {
+            var wExe = snapshot.GetProcessName(w.ProcessId);
+            if (wExe == null || !wExe.Equals(exe, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!IsEligibleOpenedWindow(w.Handle))
+                continue;
+
+            if (!_windowFirstSeenTick.TryGetValue(w.Handle, out var firstSeen))
+            {
+                firstSeen = nowTick;
+                _windowFirstSeenTick.TryAdd(w.Handle, firstSeen);
+            }
+
+            _windowLastSeenTick[w.Handle] = nowTick;
+
+            var width = w.Rect.Right - w.Rect.Left;
+            var height = w.Rect.Bottom - w.Rect.Top;
+            var area = (long)width * height;
+            var handleVal = w.Handle.ToInt64();
+
+            var pick = false;
+            if (firstSeen > bestFirstSeen)
+                pick = true;
+            else if (firstSeen == bestFirstSeen)
+            {
+                // Tie-break: prefer the most recently created HWND (best-effort), then larger area.
+                if (handleVal > bestHandle)
+                    pick = true;
+                else if (handleVal == bestHandle && area > bestArea)
+                    pick = true;
+            }
+
+            if (pick)
+            {
+                bestFirstSeen = firstSeen;
+                bestHandle = handleVal;
+                bestArea = area;
+                best = w;
+            }
+        }
+
+        if (openedModeCache != null)
+            openedModeCache[exe] = best;
+
+        if (best == null)
+            return false;
+
+        rect = best.Rect;
+        return true;
+    }
+
+    private void TrackOpenedWindows(WindowResolver.Snapshot snapshot, long nowTick, HashSet<string> activeSessionExes)
+    {
+        foreach (var w in snapshot.Windows)
+        {
+            var exe = snapshot.GetProcessName(w.ProcessId);
+            if (exe == null || !activeSessionExes.Contains(exe))
+                continue;
+
+            if (!IsEligibleOpenedWindow(w.Handle))
+                continue;
+
+            _windowFirstSeenTick.TryAdd(w.Handle, nowTick);
+            _windowLastSeenTick[w.Handle] = nowTick;
+        }
+    }
+
+    private static bool IsEligibleOpenedWindow(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero)
+            return false;
+
+        var owner = NativeMethods.GetWindow(hWnd, NativeMethods.GW_OWNER);
+        if (owner != IntPtr.Zero)
+            return false;
+
+        var exStyle = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWL_EXSTYLE).ToInt64();
+        if ((exStyle & NativeMethods.WS_EX_TOOLWINDOW) != 0)
+            return false;
+
+        if ((exStyle & NativeMethods.WS_EX_NOACTIVATE) != 0)
+            return false;
+
+        if (NativeMethods.TryIsCloaked(hWnd, out var cloaked) && cloaked)
+            return false;
+
+        return true;
+    }
+
+    private void PruneOpenedWindowTracking(long nowTick, int ttlMs)
+    {
+        // Remove any tracked windows that haven't been observed recently.
+        // This keeps the dictionaries bounded even if windows come and go.
+        var cutoff = nowTick - ttlMs;
+
+        foreach (var kvp in _windowLastSeenTick)
+        {
+            if (kvp.Value >= cutoff)
+                continue;
+
+            _windowLastSeenTick.TryRemove(kvp.Key, out _);
+            _windowFirstSeenTick.TryRemove(kvp.Key, out _);
+        }
     }
 
     private static bool TryGetValidRect(IntPtr hWnd, out RECT rect)

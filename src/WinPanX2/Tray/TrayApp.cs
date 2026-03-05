@@ -39,7 +39,20 @@ internal class TrayApp : ApplicationContext
         };
 
         _notifyIcon.ContextMenuStrip = BuildMenu();
-        
+
+        // Show the context menu on left click as well.
+        _notifyIcon.MouseUp += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            var menu = _notifyIcon.ContextMenuStrip;
+            if (menu == null)
+                return;
+
+            menu.Show(Cursor.Position);
+        };
+         
         // Start spatial audio after full initialization
         _engine.Start();
 
@@ -75,17 +88,41 @@ internal class TrayApp : ApplicationContext
             StartupManager.SetEnabled(startupItem.Checked);
         };
 
-        var bindingItem = new ToolStripMenuItem("Follow Most Recently Active Window")
-        {
-            CheckOnClick = true,
-            Checked = _config.BindingMode == "FollowMostRecent"
-        };
-        bindingItem.CheckedChanged += (_, _) =>
+        var followModeMenu = new ToolStripMenuItem("Follow Mode");
+
+        var followOriginalItem = new ToolStripMenuItem("Original window") { CheckOnClick = true };
+        var followMostRecentItem = new ToolStripMenuItem("Most recently active window") { CheckOnClick = true };
+        var followMostRecentlyOpenedItem = new ToolStripMenuItem("Most recently opened window") { CheckOnClick = true };
+
+        void SetFollowMode(string mode)
         {
             if (_initializing) return;
-            _config.BindingMode = bindingItem.Checked ? "FollowMostRecent" : "Sticky";
+
+            _config.BindingMode = mode;
+
+            followOriginalItem.Checked = mode == "Sticky";
+            followMostRecentItem.Checked = mode == "FollowMostRecent";
+            followMostRecentlyOpenedItem.Checked = mode == "FollowMostRecentOpened";
+
+            // Ensure mode change applies immediately (e.g. clear Sticky bindings).
+            _engine.ClearWindowBindings();
+            _engine.ReapplyCurrentPositions();
+
             SaveConfig();
-        };
+        }
+
+        followOriginalItem.Click += (_, _) => SetFollowMode("Sticky");
+        followMostRecentItem.Click += (_, _) => SetFollowMode("FollowMostRecent");
+        followMostRecentlyOpenedItem.Click += (_, _) => SetFollowMode("FollowMostRecentOpened");
+
+        // Initialize checks based on current config
+        followOriginalItem.Checked = _config.BindingMode != "FollowMostRecent" && _config.BindingMode != "FollowMostRecentOpened";
+        followMostRecentItem.Checked = _config.BindingMode == "FollowMostRecent";
+        followMostRecentlyOpenedItem.Checked = _config.BindingMode == "FollowMostRecentOpened";
+
+        followModeMenu.DropDownItems.Add(followOriginalItem);
+        followModeMenu.DropDownItems.Add(followMostRecentItem);
+        followModeMenu.DropDownItems.Add(followMostRecentlyOpenedItem);
 
         var applyAllDevicesItem = new ToolStripMenuItem("Apply to all stereo output devices")
         {
@@ -100,9 +137,9 @@ internal class TrayApp : ApplicationContext
             SaveConfig();
         };
 
-        // Panning depth submenu (UI is inverted vs CenterBias)
-        // Higher depth => wider panning range.
-        var depthMenu = new ToolStripMenuItem("Panning Depth");
+        // Panning width submenu (UI is inverted vs CenterBias)
+        // Higher width => wider panning range.
+        var depthMenu = new ToolStripMenuItem("Panning Width");
 
         var depthLow = new ToolStripMenuItem("Low") { CheckOnClick = true };
         var depthMedium = new ToolStripMenuItem("Medium") { CheckOnClick = true };
@@ -166,7 +203,7 @@ internal class TrayApp : ApplicationContext
 
         menu.Items.Add(enableItem);
         menu.Items.Add(startupItem);
-        menu.Items.Add(bindingItem);
+        menu.Items.Add(followModeMenu);
         menu.Items.Add(depthMenu);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(applyAllDevicesItem);

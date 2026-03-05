@@ -56,8 +56,8 @@ After installation:
 - Spatial audio is enabled automatically
 - Use the tray icon to:
   - Toggle spatial audio
-  - Adjust panning depth
-  - Enable "Follow most recently active window"
+  - Adjust panning width
+  - Choose follow mode (Original / Most recently active / Most recently opened)
   - Apply to all stereo output devices
   - Open config file
   - Open log file
@@ -106,7 +106,7 @@ Example configuration:
   "MaxPan": 1.0,
 
   // Stored value (0.0 = widest panning, 1.0 = most center-focused).
-  // Use the tray menu "Panning Depth" for an easy UI.
+  // Use the tray menu "Panning Width" for an easy UI.
   "CenterBias": 0.3,
 
   "ApplyToAllDevices": false,
@@ -123,6 +123,14 @@ Example configuration:
 - Match by process name (no .exe needed)
 - Changes reload automatically (no restart required)
 - Useful when you want Spotify to stay centered while everything else floats around
+
+### BindingMode
+
+Values:
+
+- `Sticky`: Original window (bind once; rebind only when the bound window becomes invalid)
+- `FollowMostRecent`: Most recently active window
+- `FollowMostRecentOpened`: Most recently opened window for that application
 
 ---
 
