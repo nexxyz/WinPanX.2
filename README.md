@@ -7,7 +7,7 @@ Move a window to the left side of your monitor — the sound moves left. Move it
 This is the maintained and improved successor to the original WinPan projects:
 
 - https://github.com/nexxyz/WinPanX
-- https://github.com/nexxyz/WinPanX
+- https://github.com/nexxyz/WinPanX2
 
 Those repositories are now obsolete. WinPan X.2 replaces them.
 
@@ -21,7 +21,6 @@ Those repositories are now obsolete. WinPan X.2 replaces them.
 - Per-app exclusion list (config-based)
 - Motion smoothing
 - Device hot-swap handling (Bluetooth, HDMI, etc.)
-- Crash dump generation
 - Self-contained installer
 - Fully automated CI/CD releases
 
@@ -57,21 +56,22 @@ After installation:
 - Spatial audio is enabled automatically
 - Use the tray icon to:
   - Toggle spatial audio
-  - Switch device mode (Default / All)
+  - Adjust panning depth
   - Enable "Follow most recently active window"
+  - Apply to all stereo output devices
   - Open config file
   - Open log file
 
 Most changes apply immediately. No ritual restarts required.
 
-### Device Modes
+### Output Devices
 
-- **Default mode** spatializes audio on the current Windows default output device.
+- By default, WinPan X.2 spatializes audio on the current Windows default output device.
   - If you change the default output in Windows settings, WinPan X.2 automatically
     reinitializes and follows the new default device.
 
-- **All mode** spatializes audio across all currently active stereo (2‑channel)
-  render devices.
+- If you enable "Apply to all stereo output devices", WinPan X.2 spatializes audio across
+  all currently active stereo (2+ channel) render devices.
   - When devices are added, removed, enabled, disabled, or when the default device
     changes, WinPan X.2 automatically rebuilds its device list.
 
@@ -92,16 +92,24 @@ No manual restart is required.
 Config file location:
 
 ```
-%AppData%\WinPanX2\config.json
+%AppData%\WinPanX.2\config.json
 ```
 
 Example configuration:
 
-```json
+```jsonc
 {
-  "FollowMostRecent": true,
-  "SmoothingFactor": 0.25,
-  "DeviceMode": "Default",
+  "PollingIntervalMs": 30,
+  "SmoothingFactor": 0.5,
+  "LogLevel": "Info",
+  "BindingMode": "Sticky",
+  "MaxPan": 1.0,
+
+  // Stored value (0.0 = widest panning, 1.0 = most center-focused).
+  // Use the tray menu "Panning Depth" for an easy UI.
+  "CenterBias": 0.3,
+
+  "ApplyToAllDevices": false,
   "ExcludedProcesses": [
     "explorer",
     "discord"
@@ -175,18 +183,6 @@ WinPan X.2:
 5. Updates per-session channel volumes
 
 Architecture is modular, analyzer‑enforced, and intentionally boring in all the right ways.
-
----
-
-## Crash Reporting
-
-Crash dumps are written to:
-
-```
-%AppData%\WinPanX2\Crashes
-```
-
-If something explodes, attach the `.dmp` file when reporting issues.
 
 ---
 
