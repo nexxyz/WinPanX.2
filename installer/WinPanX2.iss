@@ -1,6 +1,6 @@
 #define MyAppName "WinPan X.2"
 #define MyAppExeName "WinPanX2.exe"
-#define MyAppVersion "1.2.1"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "WinPan"
 
 [Setup]
