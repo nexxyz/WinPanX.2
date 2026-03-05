@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using WinPanX2.Audio;
@@ -18,6 +19,7 @@ internal sealed class SpatialAudioEngine : IDisposable
     private readonly Dictionary<string, AudioSessionManager> _deviceManagers = new();
     private readonly ConcurrentDictionary<(string deviceId, int pid), double> _smoothedPan = new();
     private readonly ConcurrentDictionary<(string deviceId, int pid), long> _smoothedPanLastSeenTick = new();
+    private readonly ConcurrentDictionary<(string deviceId, int pid), IntPtr> _boundHwnd = new();
     private long _lastSmoothedPanPruneTick;
     private HashSet<string> _excludedSet = new(StringComparer.OrdinalIgnoreCase);
     private string _excludedSignature = string.Empty;
@@ -111,6 +113,7 @@ internal sealed class SpatialAudioEngine : IDisposable
         ResetAllSessions();
         _smoothedPan.Clear();
         _smoothedPanLastSeenTick.Clear();
+        _boundHwnd.Clear();
 
         if (_deviceProvider is CoreAudioDeviceProvider realProvider)
         {
@@ -171,16 +174,7 @@ internal sealed class SpatialAudioEngine : IDisposable
                             var key = (deviceId, session.ProcessId);
                             _smoothedPanLastSeenTick[key] = nowTick;
 
-                            var resolved = WindowResolver.ResolveForProcess(
-                                session.ProcessId,
-                                _config.BindingMode == "FollowMostRecent");
-
-                            if (resolved == null)
-                                continue;
-
-                            var hwnd = resolved.Handle;
-
-                            if (!NativeMethods.GetWindowRect(hwnd, out var rect))
+                            if (!TryGetWindowForSession(key, session.ProcessId, out var rect))
                                 continue;
 
                             var centerX = rect.Left + (rect.Right - rect.Left) / 2;
@@ -218,6 +212,7 @@ internal sealed class SpatialAudioEngine : IDisposable
 
                         _smoothedPanLastSeenTick.TryRemove(kvp.Key, out _);
                         _smoothedPan.TryRemove(kvp.Key, out _);
+                        _boundHwnd.TryRemove(kvp.Key, out _);
                     }
 
                     _lastSmoothedPanPruneTick = nowTick;
@@ -362,14 +357,14 @@ internal sealed class SpatialAudioEngine : IDisposable
                         continue;
                     }
 
-                    var resolved = WindowResolver.ResolveForProcess(
-                        session.ProcessId,
-                        _config.BindingMode == "FollowMostRecent");
+                    var key = (deviceId, session.ProcessId);
+                    _smoothedPanLastSeenTick[key] = nowTick;
 
-                    if (resolved == null)
+                    if (!TryGetWindowForSession(key, session.ProcessId, out var rect))
                         continue;
 
-                    var normalized = VirtualDesktopMapper.MapToNormalized(resolved.CenterX);
+                    var centerX = rect.Left + (rect.Right - rect.Left) / 2;
+                    var normalized = VirtualDesktopMapper.MapToNormalized(centerX);
 
                     var biased = ApplyCenterBias(normalized, _config.CenterBias);
                     biased *= Math.Clamp(_config.MaxPan, 0.0, 1.0);
@@ -380,9 +375,7 @@ internal sealed class SpatialAudioEngine : IDisposable
 
                     session.SetStereo(left, right);
 
-                    var key = (deviceId, session.ProcessId);
                     _smoothedPan[key] = normalized;
-                    _smoothedPanLastSeenTick[key] = nowTick;
                 }
             }
             finally
@@ -391,6 +384,61 @@ internal sealed class SpatialAudioEngine : IDisposable
                     session.Dispose();
             }
         }
+    }
+
+    private bool TryGetWindowForSession((string deviceId, int pid) key, int pid, out RECT rect)
+    {
+        rect = default;
+
+        var mode = _config.BindingMode;
+        var follow = string.Equals(mode, "FollowMostRecent", StringComparison.Ordinal);
+
+        // Sticky means we keep the first valid binding for this (device, pid)
+        // until the window becomes invalid (closed/invisible), then we rebind.
+        if (!follow)
+        {
+            if (_boundHwnd.TryGetValue(key, out var bound) && bound != IntPtr.Zero)
+            {
+                if (TryGetValidRect(bound, out rect))
+                    return true;
+
+                _boundHwnd.TryRemove(key, out _);
+            }
+        }
+
+        // We resolve when:
+        // - follow mode is enabled (always), OR
+        // - sticky mode has no valid binding yet (first bind/rebind)
+        // Even in Sticky mode, picking the foreground window for the initial bind
+        // avoids accidentally binding to an arbitrary same-exe window.
+        var resolved = WindowResolver.ResolveForProcess(pid, preferForeground: true);
+        if (resolved == null)
+            return false;
+
+        // Persist binding for sticky mode.
+        if (!follow)
+            _boundHwnd[key] = resolved.Handle;
+
+        return TryGetValidRect(resolved.Handle, out rect);
+    }
+
+    private static bool TryGetValidRect(IntPtr hWnd, out RECT rect)
+    {
+        rect = default;
+
+        if (hWnd == IntPtr.Zero)
+            return false;
+
+        if (!NativeMethods.IsWindowVisible(hWnd))
+            return false;
+
+        if (!NativeMethods.GetWindowRect(hWnd, out rect))
+            return false;
+
+        if (rect.Right - rect.Left <= 0 || rect.Bottom - rect.Top <= 0)
+            return false;
+
+        return true;
     }
 
     private void OnDeviceTopologyChanged()
