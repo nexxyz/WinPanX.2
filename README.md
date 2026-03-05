@@ -6,8 +6,8 @@ Move a window to the left side of your monitor — the sound moves left. Move it
 
 This is the maintained and improved successor to the original WinPan projects:
 
+- https://github.com/nexxyz/WinPan
 - https://github.com/nexxyz/WinPanX
-- https://github.com/nexxyz/WinPanX2
 
 Those repositories are now obsolete. WinPan X.2 replaces them.
 
