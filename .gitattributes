@@ -1,0 +1,23 @@
+* text=auto eol=lf
+
+# Keep common Windows scripts CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Visual Studio solution files are typically CRLF.
+*.sln text eol=crlf
+*.slnx text eol=crlf
+
+# Treat common binaries as binary (no diff, no EOL conversion).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.7z binary
+*.pdf binary
+*.exe binary
+*.dll binary
+*.pdb binary
