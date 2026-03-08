@@ -1,6 +1,12 @@
 #define MyAppName "WinPan X.2"
 #define MyAppExeName "WinPanX2.exe"
-#define MyAppVersion "1.3.0"
+#define PublishExe "..\\src\\WinPanX2\\bin\\Release\\net8.0-windows\\win-x64\\publish\\WinPanX2.exe"
+
+#if FileExists(PublishExe)
+  #define MyAppVersion GetVersionNumbersString(PublishExe)
+#else
+  #define MyAppVersion "1.4.0.0"
+#endif
 #define MyAppPublisher "WinPan"
 
 [Setup]

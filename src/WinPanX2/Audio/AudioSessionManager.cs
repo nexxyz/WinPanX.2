@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using WinPanX2.Audio.Interop;
-// no NAudio session usage
 
 namespace WinPanX2.Audio;
 
@@ -43,7 +42,6 @@ internal sealed class AudioSessionManager : IDisposable
         _device.GetId(out var id);
         DeviceId = id;
 
-        // Acquire IMMDevice from MMDevice, then Activate IAudioSessionManager2
         var iid = typeof(IAudioSessionManager2).GUID;
         const uint CLSCTX_ALL = 0x17;
         var hr = _device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
@@ -53,7 +51,11 @@ internal sealed class AudioSessionManager : IDisposable
             ?? throw new InvalidOperationException("IAudioSessionManager2 activation returned null.");
     }
 
-    public List<AudioSessionWrapper> GetActiveSessions()
+    public List<AudioSessionWrapper> GetActiveSessions() => GetSessions(activeOnly: true);
+
+    public List<AudioSessionWrapper> GetAllSessions() => GetSessions(activeOnly: false);
+
+    private List<AudioSessionWrapper> GetSessions(bool activeOnly)
     {
         var result = new List<AudioSessionWrapper>();
 
@@ -75,8 +77,25 @@ internal sealed class AudioSessionManager : IDisposable
                 {
                     var control2 = (IAudioSessionControl2)control;
 
+                    string? instanceId = null;
+                    try
+                    {
+                        if (control2.GetSessionInstanceIdentifier(out var iid) >= 0)
+                            instanceId = string.IsNullOrWhiteSpace(iid) ? null : iid;
+                    }
+                    catch
+                    {
+                        instanceId = null;
+                    }
+
                     var hrState = control2.GetState(out var state);
-                    if (hrState < 0 || state == AudioSessionState.Expired)
+                    if (hrState < 0)
+                        continue;
+
+                    if (state == AudioSessionState.Expired)
+                        continue;
+
+                    if (activeOnly && state != AudioSessionState.Active)
                         continue;
 
                     CheckHR(control2.GetProcessId(out var pid));
@@ -92,12 +111,58 @@ internal sealed class AudioSessionManager : IDisposable
                     var volume = (IAudioChannelVolume)Marshal.GetObjectForIUnknown(volumePtr);
                     Marshal.Release(volumePtr);
 
-                    result.Add(new AudioSessionWrapper((int)pid, volume));
+                    result.Add(new AudioSessionWrapper((int)pid, volume, instanceId));
                 }
                 finally
                 {
-                    if (control != null)
-                        Marshal.ReleaseComObject(control);
+                    Marshal.ReleaseComObject(control);
+                }
+            }
+        }
+        finally
+        {
+            if (enumerator != null)
+                Marshal.ReleaseComObject(enumerator);
+        }
+
+        return result;
+    }
+
+    public List<int> GetActiveSessionPids()
+    {
+        var result = new List<int>();
+
+        if (_sessionManager == null)
+            return result;
+
+        var hrEnum = _sessionManager.GetSessionEnumerator(out var enumerator);
+        CheckHR(hrEnum);
+        try
+        {
+            CheckHR(enumerator.GetCount(out var count));
+
+            for (int i = 0; i < count; i++)
+            {
+                var hrSession = enumerator.GetSession(i, out var control);
+                if (hrSession < 0 || control == null)
+                    continue;
+
+                try
+                {
+                    var control2 = (IAudioSessionControl2)control;
+
+                    var hrState = control2.GetState(out var state);
+                    if (hrState < 0 || state != AudioSessionState.Active)
+                        continue;
+
+                    if (control2.GetProcessId(out var pid) < 0)
+                        continue;
+
+                    result.Add((int)pid);
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(control);
                 }
             }
         }

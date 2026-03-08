@@ -8,6 +8,15 @@ internal static class NativeMethods
 {
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
+    public delegate void WinEventDelegate(
+        IntPtr hWinEventHook,
+        uint eventType,
+        IntPtr hWnd,
+        int idObject,
+        int idChild,
+        uint dwEventThread,
+        uint dwmsEventTime);
+
     public const int GWL_STYLE = -16;
     public const int GWL_EXSTYLE = -20;
 
@@ -18,8 +27,35 @@ internal static class NativeMethods
 
     public const int DWMWA_CLOAKED = 14;
 
+    public const int OBJID_WINDOW = 0;
+
+    public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+
+    public const uint EVENT_OBJECT_CREATE = 0x8000;
+    public const uint EVENT_OBJECT_DESTROY = 0x8001;
+    public const uint EVENT_OBJECT_SHOW = 0x8002;
+    public const uint EVENT_OBJECT_HIDE = 0x8003;
+    public const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
+
+    public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+    public const uint WINEVENT_SKIPOWNTHREAD = 0x0001;
+    public const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+
     [DllImport("user32.dll")]
     public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetWinEventHook(
+        uint eventMin,
+        uint eventMax,
+        IntPtr hmodWinEventProc,
+        WinEventDelegate lpfnWinEventProc,
+        uint idProcess,
+        uint idThread,
+        uint dwFlags);
+
+    [DllImport("user32.dll")]
+    public static extern bool UnhookWinEvent(IntPtr hWinEventHook);
 
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hWnd);

@@ -8,20 +8,31 @@ internal sealed class AudioSessionWrapper : IDisposable
 {
     public int ProcessId { get; }
     public IAudioChannelVolume ChannelVolume { get; }
+    public string? SessionInstanceId { get; }
 
     private bool _disposed;
+    private uint? _channelCount;
 
-    public AudioSessionWrapper(int pid, IAudioChannelVolume volume)
+    public AudioSessionWrapper(int pid, IAudioChannelVolume volume, string? sessionInstanceId)
     {
         ProcessId = pid;
         ChannelVolume = volume;
+        SessionInstanceId = sessionInstanceId;
     }
 
     public bool HasStereoChannels()
     {
+        if (_channelCount.HasValue)
+            return _channelCount.Value >= 2;
+
         var hr = ChannelVolume.GetChannelCount(out var count);
         if (hr < 0)
+        {
+            _channelCount = 0;
             return false;
+        }
+
+        _channelCount = count;
         return count >= 2;
     }
 
