@@ -33,3 +33,25 @@ jobs:
     - run: dotnet restore
     - run: dotnet build --configuration Release --no-restore
     - run: dotnet test --configuration Release --no-build
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install lizard (complexity)
+      run: python -m pip install --disable-pip-version-check --no-cache-dir lizard
+
+    - name: Quality report (LOC + complexity)
+      run: |
+        mkdir -p _logs
+        python tools/quality_report.py --md _logs/quality-report.md --lizard-csv _logs/lizard.csv
+        cat _logs/quality-report.md >> "$GITHUB_STEP_SUMMARY"
+      shell: bash
+
+    - name: Upload quality artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: quality-report
+        path: |
+          _logs/quality-report.md
+          _logs/lizard.csv
