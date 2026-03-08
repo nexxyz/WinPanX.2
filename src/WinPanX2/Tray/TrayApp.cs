@@ -1,7 +1,11 @@
 using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using WinPanX2.Config;
 using WinPanX2.Core;
 using WinPanX2.Startup;
+using WinPanX2.Logging;
+using Microsoft.Win32;
 
 namespace WinPanX2.Tray;
 
@@ -11,6 +15,7 @@ internal class TrayApp : ApplicationContext
     private readonly SpatialAudioEngine _engine;
     private readonly AppConfig _config;
     private bool _initializing;
+    private bool _shutdownStarted;
 
     public TrayApp(AppConfig config)
     {
@@ -40,6 +45,8 @@ internal class TrayApp : ApplicationContext
 
         _notifyIcon.ContextMenuStrip = BuildMenu();
 
+        SubscribeRuntimeEvents();
+
         // Show the context menu on left click as well.
         _notifyIcon.MouseUp += (_, e) =>
         {
@@ -57,6 +64,79 @@ internal class TrayApp : ApplicationContext
         _engine.Start();
 
         _initializing = false;
+    }
+
+    private void SubscribeRuntimeEvents()
+    {
+        try { Application.ApplicationExit += OnApplicationExit; } catch { }
+        try { Application.ThreadException += OnThreadException; } catch { }
+        try { AppDomain.CurrentDomain.ProcessExit += OnProcessExit; } catch { }
+        try { AppDomain.CurrentDomain.UnhandledException += OnUnhandledException; } catch { }
+        try { TaskScheduler.UnobservedTaskException += OnUnobservedTaskException; } catch { }
+        try { SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged; } catch { }
+    }
+
+    private void UnsubscribeRuntimeEvents()
+    {
+        try { Application.ApplicationExit -= OnApplicationExit; } catch { }
+        try { Application.ThreadException -= OnThreadException; } catch { }
+        try { AppDomain.CurrentDomain.ProcessExit -= OnProcessExit; } catch { }
+        try { AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException; } catch { }
+        try { TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException; } catch { }
+        try { SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged; } catch { }
+    }
+
+    private void SafeShutdown(string reason, bool exitApplication)
+    {
+        if (_shutdownStarted)
+            return;
+
+        _shutdownStarted = true;
+        UnsubscribeRuntimeEvents();
+
+        try { Logger.Info($"[Shutdown] {reason}"); } catch { }
+
+        try { _engine.Dispose(); } catch { }
+
+        try
+        {
+            _notifyIcon.Visible = false;
+            _notifyIcon.Dispose();
+        }
+        catch { }
+
+        if (exitApplication)
+        {
+            try { Application.Exit(); } catch { }
+        }
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        try { _engine.NotifyDisplaySettingsChanged(); } catch { }
+    }
+
+    private void OnApplicationExit(object? sender, EventArgs e) => SafeShutdown("ApplicationExit", exitApplication: false);
+
+    private void OnProcessExit(object? sender, EventArgs e) => SafeShutdown("ProcessExit", exitApplication: false);
+
+    private void OnThreadException(object sender, ThreadExceptionEventArgs e)
+    {
+        try { Logger.Error($"UI thread exception: {e.Exception}"); } catch { }
+        SafeShutdown("ThreadException", exitApplication: false);
+    }
+
+    private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        try { Logger.Error($"Unhandled exception: {e.ExceptionObject}"); } catch { }
+        SafeShutdown("UnhandledException", exitApplication: false);
+    }
+
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        try { Logger.Error($"Unobserved task exception: {e.Exception}"); } catch { }
+        try { e.SetObserved(); } catch { }
+        SafeShutdown("UnobservedTaskException", exitApplication: false);
     }
 
     private ContextMenuStrip BuildMenu()
@@ -100,9 +180,9 @@ internal class TrayApp : ApplicationContext
 
             _config.BindingMode = mode;
 
-            followOriginalItem.Checked = mode == "Sticky";
-            followMostRecentItem.Checked = mode == "FollowMostRecent";
-            followMostRecentlyOpenedItem.Checked = mode == "FollowMostRecentOpened";
+            followOriginalItem.Checked = mode == BindingModes.Sticky;
+            followMostRecentItem.Checked = mode == BindingModes.FollowMostRecent;
+            followMostRecentlyOpenedItem.Checked = mode == BindingModes.FollowMostRecentOpened;
 
             // Ensure mode change applies immediately (e.g. clear Sticky bindings).
             _engine.ClearWindowBindings();
@@ -111,14 +191,14 @@ internal class TrayApp : ApplicationContext
             SaveConfig();
         }
 
-        followOriginalItem.Click += (_, _) => SetFollowMode("Sticky");
-        followMostRecentItem.Click += (_, _) => SetFollowMode("FollowMostRecent");
-        followMostRecentlyOpenedItem.Click += (_, _) => SetFollowMode("FollowMostRecentOpened");
+        followOriginalItem.Click += (_, _) => SetFollowMode(BindingModes.Sticky);
+        followMostRecentItem.Click += (_, _) => SetFollowMode(BindingModes.FollowMostRecent);
+        followMostRecentlyOpenedItem.Click += (_, _) => SetFollowMode(BindingModes.FollowMostRecentOpened);
 
         // Initialize checks based on current config
-        followOriginalItem.Checked = _config.BindingMode != "FollowMostRecent" && _config.BindingMode != "FollowMostRecentOpened";
-        followMostRecentItem.Checked = _config.BindingMode == "FollowMostRecent";
-        followMostRecentlyOpenedItem.Checked = _config.BindingMode == "FollowMostRecentOpened";
+        followOriginalItem.Checked = BindingModes.IsStickyLike(_config.BindingMode);
+        followMostRecentItem.Checked = _config.BindingMode == BindingModes.FollowMostRecent;
+        followMostRecentlyOpenedItem.Checked = _config.BindingMode == BindingModes.FollowMostRecentOpened;
 
         followModeMenu.DropDownItems.Add(followOriginalItem);
         followModeMenu.DropDownItems.Add(followMostRecentItem);
@@ -229,10 +309,7 @@ internal class TrayApp : ApplicationContext
 
     private void Exit()
     {
-        _engine.Dispose();
-        _notifyIcon.Visible = false;
-        _notifyIcon.Dispose();
-        Application.Exit();
+        SafeShutdown("MenuExit", exitApplication: true);
     }
 
     private void SaveConfig()

@@ -20,7 +20,10 @@ Those repositories are now obsolete. WinPan X.2 replaces them.
 - Multi-device support (Default or All active devices)
 - Per-app exclusion list (config-based)
 - Motion smoothing
+- Newly active sessions transition smoothly from their current balance toward the window position
+- Automatically restores original per-app stereo balance on exit
 - Device hot-swap handling (Bluetooth, HDMI, etc.)
+- Single-instance tray app (second launch exits politely)
 - Self-contained installer
 - Fully automated CI/CD releases
 
@@ -99,6 +102,8 @@ Example configuration:
 
 ```jsonc
 {
+  // Used as a reference time step for smoothing.
+  // WinPan X.2 is primarily event-driven and does not continuously poll at this rate.
   "PollingIntervalMs": 30,
   "SmoothingFactor": 0.5,
   "LogLevel": "Info",
@@ -122,7 +127,7 @@ Example configuration:
 - Case-insensitive
 - Match by process name (no .exe needed)
 - Changes reload automatically (no restart required)
-- Useful when you want Spotify to stay centered while everything else floats around
+- Excluded apps are left untouched (if WinPan previously modified them, it restores the original balance and then stops touching them)
 
 ### BindingMode
 
@@ -131,6 +136,10 @@ Values:
 - `Sticky`: Original window (bind once; rebind only when the bound window becomes invalid)
 - `FollowMostRecent`: Most recently active window
 - `FollowMostRecentOpened`: Most recently opened window for that application
+
+Notes:
+
+- Values are case-sensitive and must match exactly (WinPan X.2 does not auto-normalize whitespace)
 
 ---
 
@@ -165,7 +174,7 @@ Build installer (requires Inno Setup 6):
 
 Releases are fully automated via GitHub Actions.
 
-On pushing a tag (e.g. `v1.2.0`):
+On pushing a tag (e.g. `v1.4.0`):
 
 - CI runs
 - Project builds
@@ -184,11 +193,13 @@ See workflows here:
 
 WinPan X.2:
 
-1. Enumerates audio sessions via WASAPI
-2. Maps window position to normalized stereo position
-3. Applies constant-power pan law
-4. Smooths movement to avoid jitter
-5. Updates per-session channel volumes
+1. Tracks window changes via WinEvent hooks (no busy polling)
+2. Detects audio sessions via WASAPI/CoreAudio (active and inactive)
+3. Maps window position to normalized stereo position
+4. Applies constant-power pan law
+5. Smooths movement (time-based) to avoid jitter
+6. Updates per-session channel volumes
+7. Restores original stereo balance on exit
 
 Architecture is modular, analyzer‑enforced, and intentionally boring in all the right ways.
 

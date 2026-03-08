@@ -75,4 +75,44 @@ internal static class ProcessHelper
             return null;
         }
     }
+
+    private sealed class NameCacheEntry
+    {
+        public string? Name { get; }
+        public long Tick { get; }
+
+        public NameCacheEntry(string? name, long tick)
+        {
+            Name = name;
+            Tick = tick;
+        }
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, NameCacheEntry> _nameCache = new();
+
+    public static int NameCacheCount => _nameCache.Count;
+
+    public static string? GetProcessNameCached(int pid, long nowTick, int ttlMs = 5000)
+    {
+        if (_nameCache.TryGetValue(pid, out var cached))
+        {
+            if (nowTick - cached.Tick <= ttlMs)
+                return cached.Name;
+        }
+
+        var name = GetProcessName(pid);
+        _nameCache[pid] = new NameCacheEntry(name, nowTick);
+        return name;
+    }
+
+    public static void PruneNameCache(long nowTick, int ttlMs = 60_000)
+    {
+        foreach (var kvp in _nameCache)
+        {
+            if (nowTick - kvp.Value.Tick <= ttlMs)
+                continue;
+
+            _nameCache.TryRemove(kvp.Key, out _);
+        }
+    }
 }

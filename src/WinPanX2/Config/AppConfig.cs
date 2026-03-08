@@ -7,7 +7,7 @@ public class AppConfig
     // Snappier response
     public double SmoothingFactor { get; set; } = 0.5;
     public string LogLevel { get; set; } = "Info";
-    public string BindingMode { get; set; } = "Sticky";
+    public string BindingMode { get; set; } = BindingModes.Sticky;
     public double MaxPan { get; set; } = 1.0;
 
     // 0.0 = off. Higher values bias panning toward center.

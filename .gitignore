@@ -22,5 +22,8 @@ Desktop.ini
 # Publish output
 publish/
 
+# Local release artifacts
+artifacts/
+
 # Installer output
 installer/Output/
