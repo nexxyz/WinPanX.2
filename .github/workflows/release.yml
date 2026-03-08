@@ -32,8 +32,22 @@ jobs:
       with:
         dotnet-version: 8.0.x
 
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
     - run: dotnet restore
     - run: dotnet build --configuration Release --no-restore
+
+    - name: Install lizard (complexity)
+      run: python -m pip install --disable-pip-version-check --no-cache-dir lizard
+
+    - name: Quality report (LOC + complexity)
+      run: |
+        mkdir -p _logs
+        python tools/quality_report.py --md _logs/quality-report.md --lizard-csv _logs/lizard.csv
+        cat _logs/quality-report.md >> "$GITHUB_STEP_SUMMARY"
+      shell: bash
     - run: dotnet publish src/WinPanX2/WinPanX2.csproj -c Release -r win-x64 --self-contained true
 
     - name: Install Inno Setup
@@ -50,3 +64,11 @@ jobs:
         files: installer/Output/WinPanX2-Setup.exe
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload quality artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: quality-report
+        path: |
+          _logs/quality-report.md
+          _logs/lizard.csv
