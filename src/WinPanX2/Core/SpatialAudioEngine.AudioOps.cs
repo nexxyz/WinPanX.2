@@ -21,47 +21,57 @@ internal sealed partial class SpatialAudioEngine
 
             foreach (var manager in _deviceManagers.Values)
             {
-                var sessions = manager.GetAllSessions();
-                try
-                {
-                    foreach (var session in sessions)
-                    {
-                        if (!session.HasStereoChannels())
-                            continue;
-
-                        // Reset only sessions we actually modified.
-                        var tk = new TouchKey(manager.DeviceId, session.ProcessId, session.SessionInstanceId);
-                        if (!_lastAppliedStereo.ContainsKey(tk) && session.SessionInstanceId != null)
-                            tk = new TouchKey(manager.DeviceId, session.ProcessId, null);
-
-                        if (!_lastAppliedStereo.ContainsKey(tk))
-                            continue;
-
-                        if (tk.SessionInstanceId == null)
-                        {
-                            var pname = ProcessHelper.GetProcessNameCached(session.ProcessId, nowTick);
-                            if (!string.IsNullOrWhiteSpace(pname)
-                                && _touchProcessName.TryGetValue(tk, out var touchedName)
-                                && !string.Equals(touchedName, pname, StringComparison.OrdinalIgnoreCase))
-                            {
-                                continue;
-                            }
-                        }
-
-                        if (_originalStereo.TryGetValue(tk, out var original))
-                            session.SetStereo(original.Left, original.Right);
-                        else
-                            session.SetStereo(1f, 1f);
-                    }
-                }
-                finally
-                {
-                    foreach (var session in sessions)
-                        session.Dispose();
-                }
+                ResetTouchedSessionsForManager(manager, nowTick);
             }
         }
         catch { }
+    }
+
+    private void ResetTouchedSessionsForManager(AudioSessionManager manager, long nowTick)
+    {
+        var sessions = manager.GetAllSessions();
+        try
+        {
+            foreach (var session in sessions)
+            {
+                if (!session.HasStereoChannels())
+                    continue;
+
+                TryRestoreTouchedSession(manager.DeviceId, session, nowTick);
+            }
+        }
+        finally
+        {
+            foreach (var session in sessions)
+                session.Dispose();
+        }
+    }
+
+    private void TryRestoreTouchedSession(string deviceId, AudioSessionWrapper session, long nowTick)
+    {
+        // Reset only sessions we actually modified.
+        var tk = new TouchKey(deviceId, session.ProcessId, session.SessionInstanceId);
+        if (!_lastAppliedStereo.ContainsKey(tk) && session.SessionInstanceId != null)
+            tk = new TouchKey(deviceId, session.ProcessId, null);
+
+        if (!_lastAppliedStereo.ContainsKey(tk))
+            return;
+
+        if (tk.SessionInstanceId == null)
+        {
+            var pname = ProcessHelper.GetProcessNameCached(session.ProcessId, nowTick);
+            if (!string.IsNullOrWhiteSpace(pname)
+                && _touchProcessName.TryGetValue(tk, out var touchedName)
+                && !string.Equals(touchedName, pname, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        if (_originalStereo.TryGetValue(tk, out var original))
+            session.SetStereo(original.Left, original.Right);
+        else
+            session.SetStereo(1f, 1f);
     }
 
     // Force immediate recalculation without smoothing
@@ -78,45 +88,7 @@ internal sealed partial class SpatialAudioEngine
 
         foreach (var (deviceId, manager) in _deviceManagers)
         {
-            var sessions = manager.GetActiveSessions();
-
-            try
-            {
-                foreach (var session in sessions)
-                {
-                    if (!session.HasStereoChannels())
-                        continue;
-
-                    var processName = ProcessHelper.GetProcessNameCached(session.ProcessId, nowTick);
-                    var key = (deviceId, session.ProcessId);
-                    if (processName != null && _excludedSet.Contains(processName))
-                    {
-                        HandleExcludedSession(session, key);
-                        continue;
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(processName))
-                        activeSessionExes.Add(processName);
-
-                    _smoothedPanLastSeenTick[key] = nowTick;
-
-                    if (!TryGetWindowForSession(() => windowSnapshot, nowTick, openedModeCache, key, session.ProcessId, out var rect, out _))
-                        continue;
-
-                    var normalized = ComputeNormalizedForRect(rect, mapping);
-                    var (left, right) = ComputeStereoForNormalized(normalized);
-
-                    TryApplyStereo(session, key, processName, left, right);
-
-                    _smoothedPan[key] = normalized;
-                    _smoothedPanLastUpdateTick[key] = nowTick;
-                }
-            }
-            finally
-            {
-                foreach (var session in sessions)
-                    session.Dispose();
-            }
+            ApplyCurrentPositionsForDevice(deviceId, manager, windowSnapshot, nowTick, mapping, openedModeCache, activeSessionExes);
         }
 
         if (activeSessionExes.Count > 0)
@@ -130,6 +102,69 @@ internal sealed partial class SpatialAudioEngine
                 _lastOpenedWindowTrackTick = nowTick;
             }
         }
+    }
+
+    private void ApplyCurrentPositionsForDevice(
+        string deviceId,
+        AudioSessionManager manager,
+        WindowResolver.Snapshot windowSnapshot,
+        long nowTick,
+        VirtualDesktopMapper.Mapping mapping,
+        Dictionary<string, WindowInfo?>? openedModeCache,
+        HashSet<string> activeSessionExes)
+    {
+        var sessions = manager.GetActiveSessions();
+
+        try
+        {
+            foreach (var session in sessions)
+            {
+                ApplyCurrentPositionForSession(deviceId, session, windowSnapshot, nowTick, mapping, openedModeCache, activeSessionExes);
+            }
+        }
+        finally
+        {
+            foreach (var session in sessions)
+                session.Dispose();
+        }
+    }
+
+    private void ApplyCurrentPositionForSession(
+        string deviceId,
+        AudioSessionWrapper session,
+        WindowResolver.Snapshot windowSnapshot,
+        long nowTick,
+        VirtualDesktopMapper.Mapping mapping,
+        Dictionary<string, WindowInfo?>? openedModeCache,
+        HashSet<string> activeSessionExes)
+    {
+        if (!session.HasStereoChannels())
+            return;
+
+        var processName = ProcessHelper.GetProcessNameCached(session.ProcessId, nowTick);
+        var key = (deviceId, session.ProcessId);
+
+        if (processName != null && _excludedSet.Contains(processName))
+        {
+            HandleExcludedSession(session, key);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(processName))
+            activeSessionExes.Add(processName);
+
+        _smoothedPanLastSeenTick[key] = nowTick;
+
+        if (!TryGetWindowForSession(() => windowSnapshot, nowTick, openedModeCache, key, session.ProcessId, out var rect, out _))
+            return;
+
+        var normalized = ComputeNormalizedForRect(rect, mapping);
+        var (left, right) = ComputeStereoForNormalized(normalized);
+
+        TryApplyStereo(session, key, processName, left, right);
+
+        _smoothedPan[key] = normalized;
+        _smoothedPanLastUpdateTick[key] = nowTick;
     }
 
     private void PrePositionAllSessions(CancellationToken token, HashSet<(string deviceId, int pid)>? activeKeysToSkip = null)
@@ -149,68 +184,7 @@ internal sealed partial class SpatialAudioEngine
                 if (token.IsCancellationRequested)
                     return;
 
-                var sessions = manager.GetAllSessions();
-                try
-                {
-                    foreach (var session in sessions)
-                    {
-                        if (token.IsCancellationRequested)
-                            return;
-
-                        if (!session.HasStereoChannels())
-                            continue;
-
-                        var processName = ProcessHelper.GetProcessNameCached(session.ProcessId, nowTick);
-                        var key = (deviceId, session.ProcessId);
-
-                        // Don't stomp currently-active sessions; those are driven by
-                        // the smoothed main loop.
-                        if (activeKeysToSkip != null && activeKeysToSkip.Contains(key))
-                            continue;
-
-                        if (processName != null && _excludedSet.Contains(processName))
-                        {
-                            // Excluded sessions should be left untouched.
-                            HandleExcludedSession(session, key);
-                            continue;
-                        }
-
-                        RECT rect;
-
-                        // Prefer the last known hwnd rect to avoid enumerating all windows.
-                        if (_lastResolvedHwnd.TryGetValue(key, out var lastHwnd)
-                            && lastHwnd != IntPtr.Zero
-                            && TryGetValidRect(lastHwnd, out rect))
-                        {
-                            // ok
-                        }
-                        else if (_boundHwnd.TryGetValue(key, out var bound)
-                                 && bound != IntPtr.Zero
-                                 && TryGetValidRect(bound, out rect))
-                        {
-                            // ok
-                        }
-                        else
-                        {
-                            if (!TryGetWindowForSession(CaptureSnapshot, nowTick, openedModeCache, key, session.ProcessId, out rect, out _))
-                                continue;
-                        }
-
-                        var normalized = ComputeNormalizedForRect(rect, mapping);
-                        var (left, right) = ComputeStereoForNormalized(normalized);
-
-                        TryApplyStereo(session, key, processName, left, right);
-
-                        _smoothedPan[key] = normalized;
-                        _smoothedPanLastSeenTick[key] = nowTick;
-                        _smoothedPanLastUpdateTick[key] = nowTick;
-                    }
-                }
-                finally
-                {
-                    foreach (var session in sessions)
-                        session.Dispose();
-                }
+                PrePositionDeviceSessions(token, nowTick, mapping, CaptureSnapshot, openedModeCache, deviceId, manager, activeKeysToSkip);
             }
 
             RefreshTrackedHwnds();
@@ -219,6 +193,99 @@ internal sealed partial class SpatialAudioEngine
         {
             Logger.Error($"Pre-position failed: {ex.Message}");
         }
+    }
+
+    private void PrePositionDeviceSessions(
+        CancellationToken token,
+        long nowTick,
+        VirtualDesktopMapper.Mapping mapping,
+        Func<WindowResolver.Snapshot> captureSnapshot,
+        Dictionary<string, WindowInfo?>? openedModeCache,
+        string deviceId,
+        AudioSessionManager manager,
+        HashSet<(string deviceId, int pid)>? activeKeysToSkip)
+    {
+        var sessions = manager.GetAllSessions();
+        try
+        {
+            foreach (var session in sessions)
+            {
+                if (token.IsCancellationRequested)
+                    return;
+
+                PrePositionOneSession(nowTick, mapping, captureSnapshot, openedModeCache, deviceId, session, activeKeysToSkip);
+            }
+        }
+        finally
+        {
+            foreach (var session in sessions)
+                session.Dispose();
+        }
+    }
+
+    private void PrePositionOneSession(
+        long nowTick,
+        VirtualDesktopMapper.Mapping mapping,
+        Func<WindowResolver.Snapshot> captureSnapshot,
+        Dictionary<string, WindowInfo?>? openedModeCache,
+        string deviceId,
+        AudioSessionWrapper session,
+        HashSet<(string deviceId, int pid)>? activeKeysToSkip)
+    {
+        if (!session.HasStereoChannels())
+            return;
+
+        var processName = ProcessHelper.GetProcessNameCached(session.ProcessId, nowTick);
+        var key = (deviceId, session.ProcessId);
+
+        // Don't stomp currently-active sessions; those are driven by the smoothed main loop.
+        if (activeKeysToSkip != null && activeKeysToSkip.Contains(key))
+            return;
+
+        if (processName != null && _excludedSet.Contains(processName))
+        {
+            // Excluded sessions should be left untouched.
+            HandleExcludedSession(session, key);
+            return;
+        }
+
+        if (!TryResolveRectForPrePosition(captureSnapshot, nowTick, openedModeCache, key, session.ProcessId, out var rect))
+            return;
+
+        var normalized = ComputeNormalizedForRect(rect, mapping);
+        var (left, right) = ComputeStereoForNormalized(normalized);
+
+        TryApplyStereo(session, key, processName, left, right);
+
+        _smoothedPan[key] = normalized;
+        _smoothedPanLastSeenTick[key] = nowTick;
+        _smoothedPanLastUpdateTick[key] = nowTick;
+    }
+
+    private bool TryResolveRectForPrePosition(
+        Func<WindowResolver.Snapshot> captureSnapshot,
+        long nowTick,
+        Dictionary<string, WindowInfo?>? openedModeCache,
+        (string deviceId, int pid) key,
+        int pid,
+        out RECT rect)
+    {
+        // Prefer the last known hwnd rect to avoid enumerating all windows.
+        if (_lastResolvedHwnd.TryGetValue(key, out var lastHwnd)
+            && lastHwnd != IntPtr.Zero
+            && TryGetValidRect(lastHwnd, out rect))
+        {
+            return true;
+        }
+
+        if (_boundHwnd.TryGetValue(key, out var bound)
+            && bound != IntPtr.Zero
+            && TryGetValidRect(bound, out rect))
+        {
+            return true;
+        }
+
+        return TryGetWindowForSession(captureSnapshot, nowTick, openedModeCache, key, pid, out rect, out _);
     }
 
     private int GetActiveSessionCountApprox()

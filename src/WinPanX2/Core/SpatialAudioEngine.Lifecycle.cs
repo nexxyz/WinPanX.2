@@ -76,49 +76,8 @@ internal sealed partial class SpatialAudioEngine
             return;
         }
 
-        try
-        {
-            // Always rebuild device managers on Start to ensure fresh session attachment
-            foreach (var manager in _deviceManagers.Values)
-                manager.Dispose();
-
-            _deviceManagers.Clear();
-            ClearActiveSessionCache();
-
-            InitializeDeviceManagers();
-
-            _excludedSet = new HashSet<string>(
-                _config.ExcludedProcesses ?? new List<string>(),
-                StringComparer.OrdinalIgnoreCase);
-
-            if (_deviceProvider is CoreAudioDeviceProvider realProvider)
-            {
-                try
-                {
-                    realProvider.TopologyChanged += OnDeviceTopologyChanged;
-                    realProvider.RegisterNotifications();
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error($"Notification registration failed: {ex.Message}");
-                }
-            }
-
-            try
-            {
-                _winEventHook?.Dispose();
-                _winEventHook = new WinEventHook(OnWinEvent);
-            }
-            catch (Exception ex)
-            {
-                Logger.Error($"WinEvent hook setup failed: {ex.Message}");
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"Audio init failed: {ex}");
+        if (!TryInitializeForStart())
             return;
-        }
 
         var gen = Interlocked.Increment(ref _generation);
         Volatile.Write(ref _currentGeneration, gen);
@@ -142,6 +101,71 @@ internal sealed partial class SpatialAudioEngine
         _loopTask = Task.Run(() => Loop(_cts.Token, gen), _cts.Token);
 
         RequestRecompute();
+    }
+
+    private bool TryInitializeForStart()
+    {
+        try
+        {
+            RebuildDeviceManagersForStart();
+            InitializeExcludedSetForStart();
+            TryRegisterDeviceNotificationsForStart();
+            TrySetupWinEventHookForStart();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Audio init failed: {ex}");
+            return false;
+        }
+    }
+
+    private void RebuildDeviceManagersForStart()
+    {
+        // Always rebuild device managers on Start to ensure fresh session attachment
+        foreach (var manager in _deviceManagers.Values)
+            manager.Dispose();
+
+        _deviceManagers.Clear();
+        ClearActiveSessionCache();
+
+        InitializeDeviceManagers();
+    }
+
+    private void InitializeExcludedSetForStart()
+    {
+        _excludedSet = new HashSet<string>(
+            _config.ExcludedProcesses ?? new List<string>(),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void TryRegisterDeviceNotificationsForStart()
+    {
+        if (_deviceProvider is not CoreAudioDeviceProvider realProvider)
+            return;
+
+        try
+        {
+            realProvider.TopologyChanged += OnDeviceTopologyChanged;
+            realProvider.RegisterNotifications();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Notification registration failed: {ex.Message}");
+        }
+    }
+
+    private void TrySetupWinEventHookForStart()
+    {
+        try
+        {
+            _winEventHook?.Dispose();
+            _winEventHook = new WinEventHook(OnWinEvent);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"WinEvent hook setup failed: {ex.Message}");
+        }
     }
 
     private void StopLocked()

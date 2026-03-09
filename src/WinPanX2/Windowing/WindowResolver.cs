@@ -59,7 +59,19 @@ internal static class WindowResolver
         public WindowInfo? ResolveForProcess(int pid, bool preferForeground)
         {
             var targetExe = GetProcessNameCached(pid);
+            var candidates = CollectCandidates(pid, targetExe);
+            if (candidates.Count == 0)
+                return null;
 
+            if (!TrySelectBestCandidate(candidates, preferForeground, out var bestCandidate, out var bestScore, out var secondCandidate, out var secondScore))
+                return null;
+
+            LogAmbiguousSelection(pid, targetExe, preferForeground, candidates.Count, bestCandidate, bestScore, secondCandidate, secondScore);
+            return bestCandidate.Window;
+        }
+
+        private List<Candidate> CollectCandidates(int pid, string? targetExe)
+        {
             var candidates = new List<Candidate>();
             var seen = new HashSet<IntPtr>();
 
@@ -105,21 +117,27 @@ internal static class WindowResolver
             }
 
             // 3) Same-exe matches as a last resort.
-            var exe = targetExe;
-            if (!string.IsNullOrWhiteSpace(exe))
+            if (!string.IsNullOrWhiteSpace(targetExe))
             {
-                var exeWindows = GetWindowsByExeCached(exe);
+                var exeWindows = GetWindowsByExeCached(targetExe);
                 AddCandidateList(exeWindows, CandidateSource.ExeMatch);
             }
 
-            if (candidates.Count == 0)
-                return null;
+            return candidates;
+        }
 
-            double bestScore = double.NegativeInfinity;
-            Candidate bestCandidate = default;
-
-            double secondScore = double.NegativeInfinity;
-            Candidate secondCandidate = default;
+        private bool TrySelectBestCandidate(
+            List<Candidate> candidates,
+            bool preferForeground,
+            out Candidate bestCandidate,
+            out double bestScore,
+            out Candidate secondCandidate,
+            out double secondScore)
+        {
+            bestScore = double.NegativeInfinity;
+            bestCandidate = default;
+            secondScore = double.NegativeInfinity;
+            secondCandidate = default;
 
             foreach (var c in candidates)
             {
@@ -138,18 +156,29 @@ internal static class WindowResolver
                 }
             }
 
-            if (double.IsNegativeInfinity(bestScore))
-                return null;
+            return !double.IsNegativeInfinity(bestScore);
+        }
 
+        private void LogAmbiguousSelection(
+            int pid,
+            string? exe,
+            bool preferForeground,
+            int candidateCount,
+            Candidate bestCandidate,
+            double bestScore,
+            Candidate secondCandidate,
+            double secondScore)
+        {
             // Log when selection is ambiguous.
-            if (candidates.Count > 1 && Math.Abs(bestScore - secondScore) < 150)
-            {
-                _ = ScoreCandidate(bestCandidate, _foreground, preferForeground, out var bestMeta);
-                _ = ScoreCandidate(secondCandidate, _foreground, preferForeground, out var secondMeta);
-                Logger.Debug($"[WindowResolver] pid={pid} exe={exe ?? ""} preferFg={preferForeground} fg=0x{_foreground.ToInt64():X} chose=0x{bestCandidate.Window.Handle.ToInt64():X} score={bestScore:F1} class='{bestMeta.ClassName}' title='{bestMeta.Title}' owner=0x{bestMeta.Owner.ToInt64():X} ex=0x{bestMeta.ExStyle:X} rect={bestCandidate.Window.Rect.Left},{bestCandidate.Window.Rect.Top},{bestCandidate.Window.Rect.Right},{bestCandidate.Window.Rect.Bottom} src={bestCandidate.Source} depth={bestCandidate.ParentDepth} runnerUp=0x{secondCandidate.Window.Handle.ToInt64():X} score2={secondScore:F1} class2='{secondMeta.ClassName}' title2='{secondMeta.Title}' owner2=0x{secondMeta.Owner.ToInt64():X} ex2=0x{secondMeta.ExStyle:X} src2={secondCandidate.Source} depth2={secondCandidate.ParentDepth}");
-            }
+            if (candidateCount <= 1)
+                return;
 
-            return bestCandidate.Window;
+            if (Math.Abs(bestScore - secondScore) >= 150)
+                return;
+
+            _ = ScoreCandidate(bestCandidate, _foreground, preferForeground, out var bestMeta);
+            _ = ScoreCandidate(secondCandidate, _foreground, preferForeground, out var secondMeta);
+            Logger.Debug($"[WindowResolver] pid={pid} exe={exe ?? ""} preferFg={preferForeground} fg=0x{_foreground.ToInt64():X} chose=0x{bestCandidate.Window.Handle.ToInt64():X} score={bestScore:F1} class='{bestMeta.ClassName}' title='{bestMeta.Title}' owner=0x{bestMeta.Owner.ToInt64():X} ex=0x{bestMeta.ExStyle:X} rect={bestCandidate.Window.Rect.Left},{bestCandidate.Window.Rect.Top},{bestCandidate.Window.Rect.Right},{bestCandidate.Window.Rect.Bottom} src={bestCandidate.Source} depth={bestCandidate.ParentDepth} runnerUp=0x{secondCandidate.Window.Handle.ToInt64():X} score2={secondScore:F1} class2='{secondMeta.ClassName}' title2='{secondMeta.Title}' owner2=0x{secondMeta.Owner.ToInt64():X} ex2=0x{secondMeta.ExStyle:X} src2={secondCandidate.Source} depth2={secondCandidate.ParentDepth}");
         }
 
         private int? GetParentProcessIdCached(int pid)
@@ -228,15 +257,25 @@ internal static class WindowResolver
         var w = candidate.Window;
         var hwnd = w.Handle;
 
+        if (!TryBuildCandidateMetadata(hwnd, out meta))
+            return double.NegativeInfinity;
+
+        if (!IsEligibleCandidateWindow(meta, w.Rect))
+            return double.NegativeInfinity;
+
+        return ComputeCandidateScore(candidate, hwnd, w.Rect, foreground, preferForeground, meta);
+    }
+
+    private static bool TryBuildCandidateMetadata(IntPtr hwnd, out CandidateMetadata meta)
+    {
         // Window may have changed since enumeration.
         if (!NativeMethods.IsWindowVisible(hwnd))
         {
             meta = new CandidateMetadata(IntPtr.Zero, 0, 0, false, string.Empty, string.Empty);
-            return double.NegativeInfinity;
+            return false;
         }
 
         var owner = NativeMethods.GetWindow(hwnd, NativeMethods.GW_OWNER);
-
         var style = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_STYLE).ToInt64();
         var exStyle = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
 
@@ -249,28 +288,54 @@ internal static class WindowResolver
         var cls = GetWindowClass(hwnd);
 
         meta = new CandidateMetadata(owner, style, exStyle, isCloaked, title, cls);
+        return true;
+    }
 
-        if (isCloaked)
-            return double.NegativeInfinity;
+    private static bool IsEligibleCandidateWindow(CandidateMetadata meta, RECT rect)
+    {
+        if (meta.IsCloaked)
+            return false;
 
         // Filter out typical transient Chromium hover-card / tooltip windows.
         // These are commonly owned or marked as tool/no-activate.
-        if (owner != IntPtr.Zero)
-            return double.NegativeInfinity;
+        if (meta.Owner != IntPtr.Zero)
+            return false;
 
-        if ((exStyle & NativeMethods.WS_EX_TOOLWINDOW) != 0)
-            return double.NegativeInfinity;
+        if ((meta.ExStyle & NativeMethods.WS_EX_TOOLWINDOW) != 0)
+            return false;
 
-        if ((exStyle & NativeMethods.WS_EX_NOACTIVATE) != 0)
-            return double.NegativeInfinity;
+        if ((meta.ExStyle & NativeMethods.WS_EX_NOACTIVATE) != 0)
+            return false;
 
-        var width = w.Rect.Right - w.Rect.Left;
-        var height = w.Rect.Bottom - w.Rect.Top;
-        if (width <= 0 || height <= 0)
-            return double.NegativeInfinity;
+        var width = rect.Right - rect.Left;
+        var height = rect.Bottom - rect.Top;
+        return width > 0 && height > 0;
+    }
 
+    private static double ComputeCandidateScore(Candidate candidate, IntPtr hwnd, RECT rect, IntPtr foreground, bool preferForeground, CandidateMetadata meta)
+    {
+        var width = rect.Right - rect.Left;
+        var height = rect.Bottom - rect.Top;
         var area = (long)width * height;
 
+        var score = ComputeBaseScore(candidate);
+
+        if (preferForeground && hwnd == foreground)
+            score += 500;
+
+        // Prefer large windows (main browser window beats hover cards even if not filtered).
+        // Normalize with a log-ish curve: add up to ~400 points.
+        score += Math.Min(400, Math.Log10(Math.Max(1, area)) * 60);
+
+        // Title is a weak signal; many modern apps have empty titles.
+        if (!string.IsNullOrWhiteSpace(meta.Title))
+            score += 30;
+
+        return score;
+    }
+
+    private static double ComputeBaseScore(Candidate candidate)
+    {
         // Base weight by how we found this HWND.
         double score = candidate.Source switch
         {
@@ -283,18 +348,6 @@ internal static class WindowResolver
         // Prefer nearer parents in the chain.
         if (candidate.Source == CandidateSource.ParentPid)
             score -= Math.Min(candidate.ParentDepth, 10) * 15;
-
-        // Prefer the foreground window if requested.
-        if (preferForeground && hwnd == foreground)
-            score += 500;
-
-        // Prefer large windows (main browser window beats hover cards even if not filtered).
-        // Normalize with a log-ish curve: add up to ~400 points.
-        score += Math.Min(400, Math.Log10(Math.Max(1, area)) * 60);
-
-        // Title is a weak signal; many modern apps have empty titles.
-        if (!string.IsNullOrWhiteSpace(title))
-            score += 30;
 
         return score;
     }
