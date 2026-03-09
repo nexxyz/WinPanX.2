@@ -77,39 +77,19 @@ internal sealed class AudioSessionManager : IDisposable
                 {
                     var control2 = (IAudioSessionControl2)control;
 
-                    string? instanceId = null;
-                    try
-                    {
-                        if (control2.GetSessionInstanceIdentifier(out var iid) >= 0)
-                            instanceId = string.IsNullOrWhiteSpace(iid) ? null : iid;
-                    }
-                    catch
-                    {
-                        instanceId = null;
-                    }
-
-                    var hrState = control2.GetState(out var state);
-                    if (hrState < 0)
+                    if (!TryGetSessionState(control2, out var state))
                         continue;
 
-                    if (state == AudioSessionState.Expired)
+                    if (!ShouldIncludeSession(state, activeOnly))
                         continue;
 
-                    if (activeOnly && state != AudioSessionState.Active)
-                        continue;
+                    var instanceId = TryGetSessionInstanceId(control2);
 
                     CheckHR(control2.GetProcessId(out var pid));
 
-                    var unkControl = Marshal.GetIUnknownForObject(control2);
-                    var iidVolume = typeof(IAudioChannelVolume).GUID;
-                    var hrVolume = Marshal.QueryInterface(unkControl, ref iidVolume, out var volumePtr);
-                    Marshal.Release(unkControl);
-
-                    if (hrVolume != 0 || volumePtr == IntPtr.Zero)
+                    var volume = TryGetChannelVolume(control2);
+                    if (volume == null)
                         continue;
-
-                    var volume = (IAudioChannelVolume)Marshal.GetObjectForIUnknown(volumePtr);
-                    Marshal.Release(volumePtr);
 
                     result.Add(new AudioSessionWrapper((int)pid, volume, instanceId));
                 }
@@ -126,6 +106,77 @@ internal sealed class AudioSessionManager : IDisposable
         }
 
         return result;
+    }
+
+    private static bool TryGetSessionState(IAudioSessionControl2 control2, out AudioSessionState state)
+    {
+        state = default;
+        try
+        {
+            var hrState = control2.GetState(out state);
+            return hrState >= 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool ShouldIncludeSession(AudioSessionState state, bool activeOnly)
+    {
+        if (state == AudioSessionState.Expired)
+            return false;
+
+        if (activeOnly && state != AudioSessionState.Active)
+            return false;
+
+        return true;
+    }
+
+    private static string? TryGetSessionInstanceId(IAudioSessionControl2 control2)
+    {
+        try
+        {
+            if (control2.GetSessionInstanceIdentifier(out var iid) >= 0)
+                return string.IsNullOrWhiteSpace(iid) ? null : iid;
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private static IAudioChannelVolume? TryGetChannelVolume(IAudioSessionControl2 control2)
+    {
+        try
+        {
+            var unkControl = Marshal.GetIUnknownForObject(control2);
+            try
+            {
+                var iidVolume = typeof(IAudioChannelVolume).GUID;
+                var hrVolume = Marshal.QueryInterface(unkControl, ref iidVolume, out var volumePtr);
+                if (hrVolume != 0 || volumePtr == IntPtr.Zero)
+                    return null;
+
+                try
+                {
+                    return (IAudioChannelVolume)Marshal.GetObjectForIUnknown(volumePtr);
+                }
+                finally
+                {
+                    Marshal.Release(volumePtr);
+                }
+            }
+            finally
+            {
+                Marshal.Release(unkControl);
+            }
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public List<int> GetActiveSessionPids()
