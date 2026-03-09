@@ -2,6 +2,8 @@
 
 WinPan X.2 is a lightweight Windows 11 system tray utility that spatializes per‑application audio based on window position.
 
+I was bothered in my ultra-widescreen setup (and the triple-screen setup I had before that), because when I would have e.g. YouTube on my left screen while working / browsing / casually gaming on my center screen, the sound would come from the center position, and not from the left screen where the movement was happening. I was looking for a tool or even a Windows config to set this up, but could not find anything. So I decided to do some magic and fix that.
+
 Move a window to the left side of your monitor, and the sound moves left. Move it right, and the sound follows. That’s it. No surround setup required.
 
 This is the maintained and improved successor to the original WinPan projects:
