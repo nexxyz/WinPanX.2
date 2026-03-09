@@ -2,7 +2,7 @@
 
 WinPan X.2 is a lightweight Windows 11 system tray utility that spatializes per‑application audio based on window position.
 
-Move a window to the left side of your monitor — the sound moves left. Move it right — the sound follows. That’s it. No surround setup required.
+Move a window to the left side of your monitor, and the sound moves left. Move it right, and the sound follows. That’s it. No surround setup required.
 
 This is the maintained and improved successor to the original WinPan projects:
 
