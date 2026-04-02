@@ -5,7 +5,7 @@
 #if FileExists(PublishExe)
   #define MyAppVersion GetVersionNumbersString(PublishExe)
 #else
-  #define MyAppVersion "1.4.2.0"
+  #define MyAppVersion "1.4.3.0"
 #endif
 #define MyAppPublisher "WinPan"
 
