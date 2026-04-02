@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using System.Reflection;
 using WinPanX2.Config;
 using WinPanX2.Core;
 using WinPanX2.Startup;
@@ -10,6 +11,9 @@ namespace WinPanX2.Tray;
 
 internal partial class TrayApp : ApplicationContext
 {
+    private static readonly MethodInfo? ShowContextMenuMethod =
+        typeof(NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic);
+
     private readonly NotifyIcon _notifyIcon;
     private readonly SpatialAudioEngine _engine;
     private readonly AppConfig _config;
@@ -52,11 +56,7 @@ internal partial class TrayApp : ApplicationContext
             if (e.Button != MouseButtons.Left)
                 return;
 
-            var menu = _notifyIcon.ContextMenuStrip;
-            if (menu == null)
-                return;
-
-            menu.Show(Cursor.Position);
+            ShowContextMenu();
         };
          
         // Start spatial audio after full initialization
@@ -153,5 +153,27 @@ internal partial class TrayApp : ApplicationContext
         {
             // best-effort; config persistence should never break the tray app
         }
+    }
+
+    private void ShowContextMenu()
+    {
+        if (ShowContextMenuMethod != null)
+        {
+            try
+            {
+                ShowContextMenuMethod.Invoke(_notifyIcon, null);
+                return;
+            }
+            catch
+            {
+                // Fall back to manual showing if reflection fails.
+            }
+        }
+
+        var menu = _notifyIcon.ContextMenuStrip;
+        if (menu == null)
+            return;
+
+        menu.Show(Cursor.Position);
     }
 }
