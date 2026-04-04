@@ -18,8 +18,10 @@ internal sealed partial class SpatialAudioEngine
         public const int LocationStormMinIntervalMs = 15;
 
         public const int NameCachePruneIntervalMs = 60_000;
+        public const int TouchedSessionPruneIntervalMs = 15_000;
         public const int HealthLogIntervalMs = 300_000;
 
         public const int MappingBackstopMs = 60_000;
+        public const int TopologyRebuildDebounceMs = 1000;
     }
 }

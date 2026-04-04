@@ -67,6 +67,9 @@ internal sealed partial class SpatialAudioEngine : IDisposable
     private long _lastSessionProbeTick;
     private long _lastHousekeepingTick;
     private long _lastNameCachePruneTick;
+    private long _lastTouchedSessionPruneTick;
+    private long _lastTopologyRebuildTick;
+    private bool _topologyRebuildPending;
 
     private VirtualDesktopMapper.Mapping _cachedMapping;
     private bool _mappingValid;

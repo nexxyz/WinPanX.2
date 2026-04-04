@@ -14,6 +14,7 @@ internal sealed partial class SpatialAudioEngine
         _lastHousekeepingTick = Environment.TickCount64;
         _lastSessionProbeTick = _lastHousekeepingTick;
         _lastNameCachePruneTick = _lastHousekeepingTick;
+        _lastTouchedSessionPruneTick = _lastHousekeepingTick;
         _lastHealthLogTick = _lastHousekeepingTick;
 
         while (!token.IsCancellationRequested)
@@ -36,10 +37,18 @@ internal sealed partial class SpatialAudioEngine
             var events = DrainAndCoalesceEvents(generation, nowTickOuter, ref recomputeRequested);
 
             if (events.TopologyChangedRequested)
+                _topologyRebuildPending = true;
+
+            var didTopologyRebuild = false;
+            if (_topologyRebuildPending
+                && nowTickOuter - _lastTopologyRebuildTick >= Timing.TopologyRebuildDebounceMs)
             {
                 try
                 {
                     HandleDeviceTopologyChangedInLoop(token);
+                    _topologyRebuildPending = false;
+                    _lastTopologyRebuildTick = nowTickOuter;
+                    didTopologyRebuild = true;
                 }
                 catch (Exception ex)
                 {
@@ -49,7 +58,7 @@ internal sealed partial class SpatialAudioEngine
 
             try
             {
-                if (events.TopologyChangedRequested)
+                if (didTopologyRebuild)
                 {
                     _activeSessionSignature = string.Empty;
                     _lastSessionProbeTick = nowTickOuter;
@@ -67,7 +76,7 @@ internal sealed partial class SpatialAudioEngine
                     PerformHousekeeping(token, nowTickOuter);
                 }
 
-                if (!recomputeRequested && !events.TopologyChangedRequested)
+                if (!recomputeRequested && !didTopologyRebuild)
                 {
                     // Nothing to do besides periodic pruning.
                     HandleIdle(nowTickOuter);
@@ -86,6 +95,7 @@ internal sealed partial class SpatialAudioEngine
                 var nowTick = Environment.TickCount64;
                 var shouldPrune = nowTick - _lastSmoothedPanPruneTick >= Timing.SmoothedPanPruneIntervalMs;
                 var shouldPruneOpened = nowTick - _lastOpenedWindowPruneTick >= Timing.OpenedWindowPruneIntervalMs;
+                var shouldPruneTouched = nowTick - _lastTouchedSessionPruneTick >= Timing.TouchedSessionPruneIntervalMs;
 
                 if (events.ApplyNowRequested)
                 {
@@ -93,6 +103,7 @@ internal sealed partial class SpatialAudioEngine
                     RefreshTrackedHwnds();
                     PruneSmoothedPanIfDue(nowTick, Timing.SmoothedPanPruneIntervalMs, Timing.SmoothedPanEntryTtlMs);
                     PruneOpenedWindowsIfDue(nowTick, Timing.OpenedWindowPruneIntervalMs, Timing.OpenedWindowEntryTtlMs);
+                    PruneTouchedSessionsIfDue(nowTick, Timing.TouchedSessionPruneIntervalMs, Timing.SmoothedPanEntryTtlMs);
                     continue;
                 }
 
@@ -113,6 +124,9 @@ internal sealed partial class SpatialAudioEngine
 
                 if (shouldPruneOpened)
                     PruneOpenedWindowsIfDue(nowTick, Timing.OpenedWindowPruneIntervalMs, Timing.OpenedWindowEntryTtlMs);
+
+                if (shouldPruneTouched)
+                    PruneTouchedSessionsIfDue(nowTick, Timing.TouchedSessionPruneIntervalMs, Timing.SmoothedPanEntryTtlMs);
             }
             catch (Exception ex)
             {
