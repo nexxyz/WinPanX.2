@@ -140,61 +140,104 @@ internal partial class TrayApp
         var depthMedium = new ToolStripMenuItem("Medium") { CheckOnClick = true };
         var depthHigh = new ToolStripMenuItem("High") { CheckOnClick = true };
         var depthMax = new ToolStripMenuItem("Max") { CheckOnClick = true };
+        var depthCustom = new ToolStripMenuItem("Custom (from config)")
+        {
+            Enabled = false,
+            Visible = false
+        };
 
         void SetDepth(double depth)
-            => ApplyDepthFromMenu(depth, depthLow, depthMedium, depthHigh, depthMax);
+            => ApplyDepthFromMenu(depth, depthLow, depthMedium, depthHigh, depthMax, depthCustom);
 
         depthLow.Click += (_, _) => { if (_initializing) return; SetDepth(0.2); };
         depthMedium.Click += (_, _) => { if (_initializing) return; SetDepth(0.45); };
         depthHigh.Click += (_, _) => { if (_initializing) return; SetDepth(0.7); };
         depthMax.Click += (_, _) => { if (_initializing) return; SetDepth(1.0); };
 
-        InitializeDepthMenuChecks(depthLow, depthMedium, depthHigh, depthMax);
+        InitializeDepthMenuChecks(depthLow, depthMedium, depthHigh, depthMax, depthCustom);
 
         depthMenu.DropDownItems.Add(depthLow);
         depthMenu.DropDownItems.Add(depthMedium);
         depthMenu.DropDownItems.Add(depthHigh);
         depthMenu.DropDownItems.Add(depthMax);
+        depthMenu.DropDownItems.Add(new ToolStripSeparator());
+        depthMenu.DropDownItems.Add(depthCustom);
 
         return depthMenu;
     }
 
-    private void ApplyDepthFromMenu(double depth, ToolStripMenuItem low, ToolStripMenuItem medium, ToolStripMenuItem high, ToolStripMenuItem max)
+    private void ApplyDepthFromMenu(
+        double depth,
+        ToolStripMenuItem low,
+        ToolStripMenuItem medium,
+        ToolStripMenuItem high,
+        ToolStripMenuItem max,
+        ToolStripMenuItem custom)
     {
         depth = Math.Clamp(depth, 0.0, 1.0);
 
         // CenterBias: 0 = no bias (widest), 1 = strongest bias (narrowest)
         _config.CenterBias = 1.0 - depth;
-        UpdateDepthMenuChecks(depth, low, medium, high, max);
+        UpdateDepthMenuChecks(depth, low, medium, high, max, custom);
 
         _engine.ReapplyCurrentPositions();
         SaveConfig();
     }
 
-    private void InitializeDepthMenuChecks(ToolStripMenuItem low, ToolStripMenuItem medium, ToolStripMenuItem high, ToolStripMenuItem max)
+    private void InitializeDepthMenuChecks(
+        ToolStripMenuItem low,
+        ToolStripMenuItem medium,
+        ToolStripMenuItem high,
+        ToolStripMenuItem max,
+        ToolStripMenuItem custom)
     {
         var currentDepth = DepthFromCenterBias(_config.CenterBias);
-        UpdateDepthMenuChecks(currentDepth, low, medium, high, max);
+        UpdateDepthMenuChecks(currentDepth, low, medium, high, max, custom);
     }
 
     private static double DepthFromCenterBias(double centerBias)
         => 1.0 - Math.Clamp(centerBias, 0.0, 1.0);
 
-    private static void UpdateDepthMenuChecks(double depth, ToolStripMenuItem low, ToolStripMenuItem medium, ToolStripMenuItem high, ToolStripMenuItem max)
+    private static void UpdateDepthMenuChecks(
+        double depth,
+        ToolStripMenuItem low,
+        ToolStripMenuItem medium,
+        ToolStripMenuItem high,
+        ToolStripMenuItem max,
+        ToolStripMenuItem custom)
     {
         low.Checked = false;
         medium.Checked = false;
         high.Checked = false;
         max.Checked = false;
+        custom.Visible = false;
 
-        if (depth >= 0.85)
+        if (Math.Abs(depth - 1.0) <= 0.01)
+        {
             max.Checked = true;
-        else if (depth >= 0.55)
+            return;
+        }
+
+        if (Math.Abs(depth - 0.7) <= 0.01)
+        {
             high.Checked = true;
-        else if (depth >= 0.25)
+            return;
+        }
+
+        if (Math.Abs(depth - 0.45) <= 0.01)
+        {
             medium.Checked = true;
-        else
+            return;
+        }
+
+        if (Math.Abs(depth - 0.2) <= 0.01)
+        {
             low.Checked = true;
+            return;
+        }
+
+        custom.Text = $"Custom (from config: {(int)Math.Round(depth * 100.0)}%)";
+        custom.Visible = true;
     }
 
     private ToolStripMenuItem CreateOpenFileMenuItem(string label, string path)
