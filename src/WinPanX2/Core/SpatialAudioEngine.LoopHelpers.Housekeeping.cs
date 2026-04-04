@@ -90,6 +90,7 @@ internal sealed partial class SpatialAudioEngine
     {
         PruneSmoothedPanIfDue(tick, Timing.SmoothedPanPruneIntervalMs, Timing.SmoothedPanEntryTtlMs);
         PruneOpenedWindowsIfDue(tick, Timing.OpenedWindowPruneIntervalMs, Timing.OpenedWindowEntryTtlMs);
+        PruneTouchedSessionsIfDue(tick, Timing.TouchedSessionPruneIntervalMs, Timing.SmoothedPanEntryTtlMs);
 
         if (tick - _lastNameCachePruneTick >= Timing.NameCachePruneIntervalMs)
         {
@@ -126,6 +127,7 @@ internal sealed partial class SpatialAudioEngine
             _smoothedPan.TryRemove(kvp.Key, out _);
             _smoothedPanLastUpdateTick.TryRemove(kvp.Key, out _);
             _boundHwnd.TryRemove(kvp.Key, out _);
+            _stickyBoundHwndByPid.TryRemove(kvp.Key.pid, out _);
         }
 
         _lastSmoothedPanPruneTick = nowTick;
@@ -138,6 +140,28 @@ internal sealed partial class SpatialAudioEngine
 
         PruneOpenedWindowTracking(nowTick, entryTtlMs);
         _lastOpenedWindowPruneTick = nowTick;
+    }
+
+    private void PruneTouchedSessionsIfDue(long nowTick, int pruneIntervalMs, int entryTtlMs)
+    {
+        if (nowTick - _lastTouchedSessionPruneTick < pruneIntervalMs)
+            return;
+
+        foreach (var kvp in _lastAppliedStereo)
+        {
+            var key = (kvp.Key.DeviceId, kvp.Key.Pid);
+            if (_smoothedPanLastSeenTick.TryGetValue(key, out var lastSeen)
+                && nowTick - lastSeen <= entryTtlMs)
+            {
+                continue;
+            }
+
+            _lastAppliedStereo.TryRemove(kvp.Key, out _);
+            _originalStereo.TryRemove(kvp.Key, out _);
+            _touchProcessName.TryRemove(kvp.Key, out _);
+        }
+
+        _lastTouchedSessionPruneTick = nowTick;
     }
 
     private string ComputeActivePidSignatureProbe()

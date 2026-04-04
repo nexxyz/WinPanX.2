@@ -23,6 +23,9 @@ internal sealed partial class SpatialAudioEngine
         _lastAppliedStereo.Clear();
         _originalStereo.Clear();
         _touchProcessName.Clear();
+        _topologyRebuildPending = false;
+        _lastTopologyRebuildTick = 0;
+        _lastTouchedSessionPruneTick = 0;
         ClearWindowResolutionTracking();
         ClearMappingCache();
 
@@ -94,6 +97,9 @@ internal sealed partial class SpatialAudioEngine
         _cts = new CancellationTokenSource();
 
         _lastSmoothedPanPruneTick = Environment.TickCount64;
+        _lastTouchedSessionPruneTick = _lastSmoothedPanPruneTick;
+        _lastTopologyRebuildTick = 0;
+        _topologyRebuildPending = false;
 
         IsEnabled = true;
         Logger.Info("Spatial engine started");
