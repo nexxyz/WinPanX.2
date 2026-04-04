@@ -161,6 +161,7 @@ internal sealed partial class SpatialAudioEngine
         _smoothedPanLastSeenTick.TryRemove(key, out _);
         _smoothedPanLastUpdateTick.TryRemove(key, out _);
         _boundHwnd.TryRemove(key, out _);
+        _stickyBoundHwndByPid.TryRemove(key.pid, out _);
 
         var removeKey = new TouchKey(key.deviceId, key.pid, session.SessionInstanceId);
         _lastAppliedStereo.TryRemove(removeKey, out _);
