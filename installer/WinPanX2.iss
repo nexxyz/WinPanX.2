@@ -5,7 +5,7 @@
 #if FileExists(PublishExe)
   #define MyAppVersion GetVersionNumbersString(PublishExe)
 #else
-  #define MyAppVersion "1.4.5.0"
+  #define MyAppVersion "1.4.6.0"
 #endif
 #define MyAppPublisher "WinPan"
 
@@ -56,3 +56,5 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch WinPan X.2"; Flags: nowa
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
     ValueType: string; ValueName: "WinPanX2"; ValueData: """{app}\{#MyAppExeName}"""; \
     Tasks: startup; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
+    ValueType: none; ValueName: "WinPan X.2"; Flags: deletevalue uninsdeletevalue
