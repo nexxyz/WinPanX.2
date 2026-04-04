@@ -285,6 +285,14 @@ internal sealed partial class SpatialAudioEngine
             return true;
         }
 
+        if (_stickyBoundHwndByPid.TryGetValue(pid, out var stickyBound)
+            && stickyBound != IntPtr.Zero
+            && TryGetValidRect(stickyBound, out rect))
+        {
+            _boundHwnd[key] = stickyBound;
+            return true;
+        }
+
         return TryGetWindowForSession(captureSnapshot, nowTick, openedModeCache, key, pid, out rect, out _);
     }
 

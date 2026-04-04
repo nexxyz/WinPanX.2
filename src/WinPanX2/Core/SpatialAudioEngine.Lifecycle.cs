@@ -12,12 +12,14 @@ namespace WinPanX2.Core;
 
 internal sealed partial class SpatialAudioEngine
 {
-    private void ClearRuntimeStateAfterStop(bool clearOpenedTracking, bool clearActiveSessionCache)
+    private void ClearRuntimeStateAfterStop(bool clearOpenedTracking, bool clearActiveSessionCache, bool clearStickyBindings)
     {
         _smoothedPan.Clear();
         _smoothedPanLastSeenTick.Clear();
         _smoothedPanLastUpdateTick.Clear();
         _boundHwnd.Clear();
+        if (clearStickyBindings)
+            _stickyBoundHwndByPid.Clear();
         _lastAppliedStereo.Clear();
         _originalStereo.Clear();
         _touchProcessName.Clear();
@@ -48,7 +50,11 @@ internal sealed partial class SpatialAudioEngine
         EnqueueEvent(EngineEventType.ApplyCurrentPositionsRequested, 0, IntPtr.Zero);
     }
 
-    public void ClearWindowBindings() => _boundHwnd.Clear();
+    public void ClearWindowBindings()
+    {
+        _boundHwnd.Clear();
+        _stickyBoundHwndByPid.Clear();
+    }
 
     public void Start()
     {
@@ -206,7 +212,7 @@ internal sealed partial class SpatialAudioEngine
         DrainEventQueue();
 
         ResetTouchedSessions();
-        ClearRuntimeStateAfterStop(clearOpenedTracking: true, clearActiveSessionCache: true);
+        ClearRuntimeStateAfterStop(clearOpenedTracking: true, clearActiveSessionCache: true, clearStickyBindings: true);
 
         if (_deviceProvider is CoreAudioDeviceProvider realProvider)
         {
@@ -238,7 +244,7 @@ internal sealed partial class SpatialAudioEngine
         _deviceManagers.Clear();
         ClearActiveSessionCache();
 
-        ClearRuntimeStateAfterStop(clearOpenedTracking: true, clearActiveSessionCache: false);
+        ClearRuntimeStateAfterStop(clearOpenedTracking: true, clearActiveSessionCache: false, clearStickyBindings: false);
 
         InitializeDeviceManagers();
 
@@ -277,7 +283,7 @@ internal sealed partial class SpatialAudioEngine
             if (wasEnabled)
                 StopLocked();
 
-            ClearRuntimeStateAfterStop(clearOpenedTracking: false, clearActiveSessionCache: false);
+            ClearRuntimeStateAfterStop(clearOpenedTracking: false, clearActiveSessionCache: false, clearStickyBindings: true);
 
             _deviceMode = mode;
 

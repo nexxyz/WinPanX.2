@@ -27,10 +27,23 @@ internal sealed partial class SpatialAudioEngine
         // until the window becomes invalid (closed/invisible), then we rebind.
         if (!followActive && !followOpened)
         {
+            if (_stickyBoundHwndByPid.TryGetValue(pid, out var stickyBound) && stickyBound != IntPtr.Zero)
+            {
+                if (TryGetValidRect(stickyBound, out rect))
+                {
+                    _boundHwnd[key] = stickyBound;
+                    resolvedHwnd = stickyBound;
+                    return true;
+                }
+
+                _stickyBoundHwndByPid.TryRemove(pid, out _);
+            }
+
             if (_boundHwnd.TryGetValue(key, out var bound) && bound != IntPtr.Zero)
             {
                 if (TryGetValidRect(bound, out rect))
                 {
+                    _stickyBoundHwndByPid[pid] = bound;
                     resolvedHwnd = bound;
                     return true;
                 }
@@ -70,7 +83,10 @@ internal sealed partial class SpatialAudioEngine
             return false;
 
         if (!followActive)
+        {
             _boundHwnd[key] = resolved.Handle;
+            _stickyBoundHwndByPid[pid] = resolved.Handle;
+        }
 
         rect = resolved.Rect;
         resolvedHwnd = resolved.Handle;

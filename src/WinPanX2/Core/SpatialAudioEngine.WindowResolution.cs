@@ -167,6 +167,12 @@ internal sealed partial class SpatialAudioEngine
                 _trackedHwnds.TryAdd(kvp.Value, 0);
         }
 
+        foreach (var kvp in _stickyBoundHwndByPid)
+        {
+            if (kvp.Value != IntPtr.Zero)
+                _trackedHwnds.TryAdd(kvp.Value, 0);
+        }
+
         foreach (var kvp in _lastResolvedHwnd)
         {
             if (kvp.Value != IntPtr.Zero)
