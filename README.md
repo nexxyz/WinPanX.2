@@ -61,7 +61,8 @@ After installation:
 - Spatial audio is enabled automatically
 - Use the tray icon to:
   - Toggle spatial audio
-  - Adjust panning width
+  - Adjust width limit
+  - Adjust center bias
   - Choose follow mode (Original / Most recently active / Most recently opened)
   - Apply to all stereo output devices
   - Open config file
@@ -112,8 +113,8 @@ Example configuration:
   "BindingMode": "Sticky",
   "MaxPan": 1.0,
 
-  // Stored value (0.0 = widest panning, 1.0 = most center-focused).
-  // Use the tray menu "Panning Width" for an easy UI.
+  // Stored value (0.0 = no center pull, 1.0 = strongest center pull).
+  // Use the tray menu "Center Bias" for an easy UI.
   "CenterBias": 0.3,
 
   "ApplyToAllDevices": false,
@@ -204,6 +205,11 @@ WinPan X.2:
 7. Restores original stereo balance on exit
 
 Architecture is modular, analyzer‑enforced, and intentionally boring in all the right ways.
+
+Additional docs:
+
+- Design: `docs/DESIGN.md`
+- Technical notes: `docs/TECHNICAL.md`
 
 ---
 
