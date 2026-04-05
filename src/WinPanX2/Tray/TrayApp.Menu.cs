@@ -222,31 +222,32 @@ internal partial class TrayApp
         custom.Visible = false;
         customSeparator.Visible = false;
 
-        if (Math.Abs(maxPan - 0.5) <= 0.01)
+        var presetIndex = TrayMenuPresets.DetectWidthLimitPreset(maxPan);
+        if (presetIndex == 0)
         {
             width50.Checked = true;
             return;
         }
 
-        if (Math.Abs(maxPan - 0.65) <= 0.01)
+        if (presetIndex == 1)
         {
             width65.Checked = true;
             return;
         }
 
-        if (Math.Abs(maxPan - 0.8) <= 0.01)
+        if (presetIndex == 2)
         {
             width80.Checked = true;
             return;
         }
 
-        if (Math.Abs(maxPan - 0.9) <= 0.01)
+        if (presetIndex == 3)
         {
             width90.Checked = true;
             return;
         }
 
-        if (Math.Abs(maxPan - 1.0) <= 0.01)
+        if (presetIndex == 4)
         {
             width100.Checked = true;
             return;
@@ -341,25 +342,26 @@ internal partial class TrayApp
         custom.Visible = false;
         customSeparator.Visible = false;
 
-        if (Math.Abs(centerBias - 0.0) <= 0.01)
+        var presetIndex = TrayMenuPresets.DetectCenterBiasPreset(centerBias);
+        if (presetIndex == 0)
         {
             off.Checked = true;
             return;
         }
 
-        if (Math.Abs(centerBias - 0.3) <= 0.01)
+        if (presetIndex == 1)
         {
             low.Checked = true;
             return;
         }
 
-        if (Math.Abs(centerBias - 0.55) <= 0.01)
+        if (presetIndex == 2)
         {
             medium.Checked = true;
             return;
         }
 
-        if (Math.Abs(centerBias - 0.8) <= 0.01)
+        if (presetIndex == 3)
         {
             high.Checked = true;
             return;

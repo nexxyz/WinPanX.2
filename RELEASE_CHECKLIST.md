@@ -1,3 +1,5 @@
+- Canonical release commands and packaging notes also live in `docs/TECHNICAL.md`.
+
 - Build + tests
   - `dotnet build -c Release`
   - `dotnet test -c Release`

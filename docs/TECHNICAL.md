@@ -82,9 +82,9 @@ Installer output:
 5. Tag and push (example):
 
 ```powershell
-git tag v1.4.9
+git tag vX.Y.Z
 git push origin main
-git push origin v1.4.9
+git push origin vX.Y.Z
 ```
 
 6. GitHub Actions release workflow publishes installer asset.

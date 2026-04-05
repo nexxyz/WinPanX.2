@@ -129,7 +129,8 @@ Example configuration:
 
 - Case-insensitive
 - Match by process name (no .exe needed)
-- Changes reload automatically (no restart required)
+- Tray/app changes apply immediately
+- Manual edits to `config.json` are loaded on next app start
 - Excluded apps are left untouched (if WinPan previously modified them, it restores the original balance and then stops touching them)
 
 ### BindingMode
@@ -142,7 +143,8 @@ Values:
 
 Notes:
 
-- Values are case-sensitive and must match exactly (WinPan X.2 does not auto-normalize whitespace)
+- `Sticky`, `FollowMostRecent`, and `FollowMostRecentOpened` are the canonical values
+- Unknown values fall back to Sticky-like behavior (`Original window`)
 
 ---
 
