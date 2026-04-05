@@ -147,9 +147,10 @@ internal partial class TrayApp
             Enabled = false,
             Visible = false
         };
+        var widthCustomSeparator = new ToolStripSeparator { Visible = false };
 
         void SetWidthLimit(double maxPan)
-            => ApplyWidthLimitFromMenu(maxPan, width50, width65, width80, width90, width100, widthCustom);
+            => ApplyWidthLimitFromMenu(maxPan, width50, width65, width80, width90, width100, widthCustom, widthCustomSeparator);
 
         width50.Click += (_, _) => { if (_initializing) return; SetWidthLimit(0.5); };
         width65.Click += (_, _) => { if (_initializing) return; SetWidthLimit(0.65); };
@@ -157,14 +158,14 @@ internal partial class TrayApp
         width90.Click += (_, _) => { if (_initializing) return; SetWidthLimit(0.9); };
         width100.Click += (_, _) => { if (_initializing) return; SetWidthLimit(1.0); };
 
-        InitializeWidthLimitMenuChecks(width50, width65, width80, width90, width100, widthCustom);
+        InitializeWidthLimitMenuChecks(width50, width65, width80, width90, width100, widthCustom, widthCustomSeparator);
 
         widthLimitMenu.DropDownItems.Add(width50);
         widthLimitMenu.DropDownItems.Add(width65);
         widthLimitMenu.DropDownItems.Add(width80);
         widthLimitMenu.DropDownItems.Add(width90);
         widthLimitMenu.DropDownItems.Add(width100);
-        widthLimitMenu.DropDownItems.Add(new ToolStripSeparator());
+        widthLimitMenu.DropDownItems.Add(widthCustomSeparator);
         widthLimitMenu.DropDownItems.Add(widthCustom);
 
         return widthLimitMenu;
@@ -177,12 +178,13 @@ internal partial class TrayApp
         ToolStripMenuItem width80,
         ToolStripMenuItem width90,
         ToolStripMenuItem width100,
-        ToolStripMenuItem custom)
+        ToolStripMenuItem custom,
+        ToolStripSeparator customSeparator)
     {
         maxPan = Math.Clamp(maxPan, 0.0, 1.0);
 
         _config.MaxPan = maxPan;
-        UpdateWidthLimitMenuChecks(maxPan, width50, width65, width80, width90, width100, custom);
+        UpdateWidthLimitMenuChecks(maxPan, width50, width65, width80, width90, width100, custom, customSeparator);
 
         _engine.ReapplyCurrentPositions();
         SaveConfig();
@@ -194,10 +196,11 @@ internal partial class TrayApp
         ToolStripMenuItem width80,
         ToolStripMenuItem width90,
         ToolStripMenuItem width100,
-        ToolStripMenuItem custom)
+        ToolStripMenuItem custom,
+        ToolStripSeparator customSeparator)
     {
         var current = Math.Clamp(_config.MaxPan, 0.0, 1.0);
-        UpdateWidthLimitMenuChecks(current, width50, width65, width80, width90, width100, custom);
+        UpdateWidthLimitMenuChecks(current, width50, width65, width80, width90, width100, custom, customSeparator);
     }
 
     private static void UpdateWidthLimitMenuChecks(
@@ -207,7 +210,8 @@ internal partial class TrayApp
         ToolStripMenuItem width80,
         ToolStripMenuItem width90,
         ToolStripMenuItem width100,
-        ToolStripMenuItem custom)
+        ToolStripMenuItem custom,
+        ToolStripSeparator customSeparator)
     {
         width50.Checked = false;
         width65.Checked = false;
@@ -216,6 +220,7 @@ internal partial class TrayApp
         width100.Checked = false;
         custom.Checked = false;
         custom.Visible = false;
+        customSeparator.Visible = false;
 
         if (Math.Abs(maxPan - 0.5) <= 0.01)
         {
@@ -250,6 +255,7 @@ internal partial class TrayApp
         custom.Text = $"Custom (from config: {(int)Math.Round(maxPan * 100.0)}%)";
         custom.Checked = true;
         custom.Visible = true;
+        customSeparator.Visible = true;
     }
 
     private ToolStripMenuItem CreateCenterBiasMenuItem()
@@ -266,22 +272,23 @@ internal partial class TrayApp
             Enabled = false,
             Visible = false
         };
+        var customSeparator = new ToolStripSeparator { Visible = false };
 
         void SetCenterBias(double centerBias)
-            => ApplyCenterBiasFromMenu(centerBias, off, low, medium, high, custom);
+            => ApplyCenterBiasFromMenu(centerBias, off, low, medium, high, custom, customSeparator);
 
         off.Click += (_, _) => { if (_initializing) return; SetCenterBias(0.0); };
         low.Click += (_, _) => { if (_initializing) return; SetCenterBias(0.3); };
         medium.Click += (_, _) => { if (_initializing) return; SetCenterBias(0.55); };
         high.Click += (_, _) => { if (_initializing) return; SetCenterBias(0.8); };
 
-        InitializeCenterBiasMenuChecks(off, low, medium, high, custom);
+        InitializeCenterBiasMenuChecks(off, low, medium, high, custom, customSeparator);
 
         centerBiasMenu.DropDownItems.Add(off);
         centerBiasMenu.DropDownItems.Add(low);
         centerBiasMenu.DropDownItems.Add(medium);
         centerBiasMenu.DropDownItems.Add(high);
-        centerBiasMenu.DropDownItems.Add(new ToolStripSeparator());
+        centerBiasMenu.DropDownItems.Add(customSeparator);
         centerBiasMenu.DropDownItems.Add(custom);
 
         return centerBiasMenu;
@@ -293,12 +300,13 @@ internal partial class TrayApp
         ToolStripMenuItem low,
         ToolStripMenuItem medium,
         ToolStripMenuItem high,
-        ToolStripMenuItem custom)
+        ToolStripMenuItem custom,
+        ToolStripSeparator customSeparator)
     {
         centerBias = Math.Clamp(centerBias, 0.0, 1.0);
 
         _config.CenterBias = centerBias;
-        UpdateCenterBiasMenuChecks(centerBias, off, low, medium, high, custom);
+        UpdateCenterBiasMenuChecks(centerBias, off, low, medium, high, custom, customSeparator);
 
         _engine.ReapplyCurrentPositions();
         SaveConfig();
@@ -309,10 +317,11 @@ internal partial class TrayApp
         ToolStripMenuItem low,
         ToolStripMenuItem medium,
         ToolStripMenuItem high,
-        ToolStripMenuItem custom)
+        ToolStripMenuItem custom,
+        ToolStripSeparator customSeparator)
     {
         var current = Math.Clamp(_config.CenterBias, 0.0, 1.0);
-        UpdateCenterBiasMenuChecks(current, off, low, medium, high, custom);
+        UpdateCenterBiasMenuChecks(current, off, low, medium, high, custom, customSeparator);
     }
 
     private static void UpdateCenterBiasMenuChecks(
@@ -321,7 +330,8 @@ internal partial class TrayApp
         ToolStripMenuItem low,
         ToolStripMenuItem medium,
         ToolStripMenuItem high,
-        ToolStripMenuItem custom)
+        ToolStripMenuItem custom,
+        ToolStripSeparator customSeparator)
     {
         off.Checked = false;
         low.Checked = false;
@@ -329,6 +339,7 @@ internal partial class TrayApp
         high.Checked = false;
         custom.Checked = false;
         custom.Visible = false;
+        customSeparator.Visible = false;
 
         if (Math.Abs(centerBias - 0.0) <= 0.01)
         {
@@ -357,6 +368,7 @@ internal partial class TrayApp
         custom.Text = $"Custom (from config: {(int)Math.Round(centerBias * 100.0)}%)";
         custom.Checked = true;
         custom.Visible = true;
+        customSeparator.Visible = true;
     }
 
     private ToolStripMenuItem CreateOpenFileMenuItem(string label, string path)
