@@ -15,7 +15,8 @@ internal partial class TrayApp
         var enableItem = CreateEnableMenuItem();
         var startupItem = CreateStartupMenuItem();
         var followModeMenu = CreateFollowModeMenuItem();
-        var depthMenu = CreatePanningWidthMenuItem();
+        var widthLimitMenu = CreateWidthLimitMenuItem();
+        var centerBiasMenu = CreateCenterBiasMenuItem();
         var applyAllDevicesItem = CreateApplyAllDevicesMenuItem();
         var openConfig = CreateOpenFileMenuItem("Open Config", Paths.ConfigFilePath);
         var openLog = CreateOpenFileMenuItem("Open Log", Paths.LogFilePath);
@@ -26,7 +27,8 @@ internal partial class TrayApp
         menu.Items.Add(enableItem);
         menu.Items.Add(startupItem);
         menu.Items.Add(followModeMenu);
-        menu.Items.Add(depthMenu);
+        menu.Items.Add(widthLimitMenu);
+        menu.Items.Add(centerBiasMenu);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(applyAllDevicesItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -130,113 +132,230 @@ internal partial class TrayApp
         return followModeMenu;
     }
 
-    private ToolStripMenuItem CreatePanningWidthMenuItem()
+    private ToolStripMenuItem CreateWidthLimitMenuItem()
     {
-        // Panning width submenu (UI is inverted vs CenterBias)
-        // Higher width => wider panning range.
-        var depthMenu = new ToolStripMenuItem("Panning Width");
+        var widthLimitMenu = new ToolStripMenuItem("Width Limit");
 
-        var depthLow = new ToolStripMenuItem("Low") { CheckOnClick = true };
-        var depthMedium = new ToolStripMenuItem("Medium") { CheckOnClick = true };
-        var depthHigh = new ToolStripMenuItem("High") { CheckOnClick = true };
-        var depthMax = new ToolStripMenuItem("Max") { CheckOnClick = true };
-        var depthCustom = new ToolStripMenuItem("Custom (from config)")
+        var width50 = new ToolStripMenuItem("50%") { CheckOnClick = true };
+        var width65 = new ToolStripMenuItem("65%") { CheckOnClick = true };
+        var width80 = new ToolStripMenuItem("80%") { CheckOnClick = true };
+        var width90 = new ToolStripMenuItem("90%") { CheckOnClick = true };
+        var width100 = new ToolStripMenuItem("100%") { CheckOnClick = true };
+        var widthCustom = new ToolStripMenuItem("Custom (from config)")
         {
+            CheckOnClick = true,
             Enabled = false,
             Visible = false
         };
 
-        void SetDepth(double depth)
-            => ApplyDepthFromMenu(depth, depthLow, depthMedium, depthHigh, depthMax, depthCustom);
+        void SetWidthLimit(double maxPan)
+            => ApplyWidthLimitFromMenu(maxPan, width50, width65, width80, width90, width100, widthCustom);
 
-        depthLow.Click += (_, _) => { if (_initializing) return; SetDepth(0.2); };
-        depthMedium.Click += (_, _) => { if (_initializing) return; SetDepth(0.45); };
-        depthHigh.Click += (_, _) => { if (_initializing) return; SetDepth(0.7); };
-        depthMax.Click += (_, _) => { if (_initializing) return; SetDepth(1.0); };
+        width50.Click += (_, _) => { if (_initializing) return; SetWidthLimit(0.5); };
+        width65.Click += (_, _) => { if (_initializing) return; SetWidthLimit(0.65); };
+        width80.Click += (_, _) => { if (_initializing) return; SetWidthLimit(0.8); };
+        width90.Click += (_, _) => { if (_initializing) return; SetWidthLimit(0.9); };
+        width100.Click += (_, _) => { if (_initializing) return; SetWidthLimit(1.0); };
 
-        InitializeDepthMenuChecks(depthLow, depthMedium, depthHigh, depthMax, depthCustom);
+        InitializeWidthLimitMenuChecks(width50, width65, width80, width90, width100, widthCustom);
 
-        depthMenu.DropDownItems.Add(depthLow);
-        depthMenu.DropDownItems.Add(depthMedium);
-        depthMenu.DropDownItems.Add(depthHigh);
-        depthMenu.DropDownItems.Add(depthMax);
-        depthMenu.DropDownItems.Add(new ToolStripSeparator());
-        depthMenu.DropDownItems.Add(depthCustom);
+        widthLimitMenu.DropDownItems.Add(width50);
+        widthLimitMenu.DropDownItems.Add(width65);
+        widthLimitMenu.DropDownItems.Add(width80);
+        widthLimitMenu.DropDownItems.Add(width90);
+        widthLimitMenu.DropDownItems.Add(width100);
+        widthLimitMenu.DropDownItems.Add(new ToolStripSeparator());
+        widthLimitMenu.DropDownItems.Add(widthCustom);
 
-        return depthMenu;
+        return widthLimitMenu;
     }
 
-    private void ApplyDepthFromMenu(
-        double depth,
-        ToolStripMenuItem low,
-        ToolStripMenuItem medium,
-        ToolStripMenuItem high,
-        ToolStripMenuItem max,
+    private void ApplyWidthLimitFromMenu(
+        double maxPan,
+        ToolStripMenuItem width50,
+        ToolStripMenuItem width65,
+        ToolStripMenuItem width80,
+        ToolStripMenuItem width90,
+        ToolStripMenuItem width100,
         ToolStripMenuItem custom)
     {
-        depth = Math.Clamp(depth, 0.0, 1.0);
+        maxPan = Math.Clamp(maxPan, 0.0, 1.0);
 
-        // CenterBias: 0 = no bias (widest), 1 = strongest bias (narrowest)
-        _config.CenterBias = 1.0 - depth;
-        UpdateDepthMenuChecks(depth, low, medium, high, max, custom);
+        _config.MaxPan = maxPan;
+        UpdateWidthLimitMenuChecks(maxPan, width50, width65, width80, width90, width100, custom);
 
         _engine.ReapplyCurrentPositions();
         SaveConfig();
     }
 
-    private void InitializeDepthMenuChecks(
-        ToolStripMenuItem low,
-        ToolStripMenuItem medium,
-        ToolStripMenuItem high,
-        ToolStripMenuItem max,
+    private void InitializeWidthLimitMenuChecks(
+        ToolStripMenuItem width50,
+        ToolStripMenuItem width65,
+        ToolStripMenuItem width80,
+        ToolStripMenuItem width90,
+        ToolStripMenuItem width100,
         ToolStripMenuItem custom)
     {
-        var currentDepth = DepthFromCenterBias(_config.CenterBias);
-        UpdateDepthMenuChecks(currentDepth, low, medium, high, max, custom);
+        var current = Math.Clamp(_config.MaxPan, 0.0, 1.0);
+        UpdateWidthLimitMenuChecks(current, width50, width65, width80, width90, width100, custom);
     }
 
-    private static double DepthFromCenterBias(double centerBias)
-        => 1.0 - Math.Clamp(centerBias, 0.0, 1.0);
+    private static void UpdateWidthLimitMenuChecks(
+        double maxPan,
+        ToolStripMenuItem width50,
+        ToolStripMenuItem width65,
+        ToolStripMenuItem width80,
+        ToolStripMenuItem width90,
+        ToolStripMenuItem width100,
+        ToolStripMenuItem custom)
+    {
+        width50.Checked = false;
+        width65.Checked = false;
+        width80.Checked = false;
+        width90.Checked = false;
+        width100.Checked = false;
+        custom.Checked = false;
+        custom.Visible = false;
 
-    private static void UpdateDepthMenuChecks(
-        double depth,
+        if (Math.Abs(maxPan - 0.5) <= 0.01)
+        {
+            width50.Checked = true;
+            return;
+        }
+
+        if (Math.Abs(maxPan - 0.65) <= 0.01)
+        {
+            width65.Checked = true;
+            return;
+        }
+
+        if (Math.Abs(maxPan - 0.8) <= 0.01)
+        {
+            width80.Checked = true;
+            return;
+        }
+
+        if (Math.Abs(maxPan - 0.9) <= 0.01)
+        {
+            width90.Checked = true;
+            return;
+        }
+
+        if (Math.Abs(maxPan - 1.0) <= 0.01)
+        {
+            width100.Checked = true;
+            return;
+        }
+
+        custom.Text = $"Custom (from config: {(int)Math.Round(maxPan * 100.0)}%)";
+        custom.Checked = true;
+        custom.Visible = true;
+    }
+
+    private ToolStripMenuItem CreateCenterBiasMenuItem()
+    {
+        var centerBiasMenu = new ToolStripMenuItem("Center Bias");
+
+        var off = new ToolStripMenuItem("Off") { CheckOnClick = true };
+        var low = new ToolStripMenuItem("Low") { CheckOnClick = true };
+        var medium = new ToolStripMenuItem("Medium") { CheckOnClick = true };
+        var high = new ToolStripMenuItem("High") { CheckOnClick = true };
+        var custom = new ToolStripMenuItem("Custom (from config)")
+        {
+            CheckOnClick = true,
+            Enabled = false,
+            Visible = false
+        };
+
+        void SetCenterBias(double centerBias)
+            => ApplyCenterBiasFromMenu(centerBias, off, low, medium, high, custom);
+
+        off.Click += (_, _) => { if (_initializing) return; SetCenterBias(0.0); };
+        low.Click += (_, _) => { if (_initializing) return; SetCenterBias(0.3); };
+        medium.Click += (_, _) => { if (_initializing) return; SetCenterBias(0.55); };
+        high.Click += (_, _) => { if (_initializing) return; SetCenterBias(0.8); };
+
+        InitializeCenterBiasMenuChecks(off, low, medium, high, custom);
+
+        centerBiasMenu.DropDownItems.Add(off);
+        centerBiasMenu.DropDownItems.Add(low);
+        centerBiasMenu.DropDownItems.Add(medium);
+        centerBiasMenu.DropDownItems.Add(high);
+        centerBiasMenu.DropDownItems.Add(new ToolStripSeparator());
+        centerBiasMenu.DropDownItems.Add(custom);
+
+        return centerBiasMenu;
+    }
+
+    private void ApplyCenterBiasFromMenu(
+        double centerBias,
+        ToolStripMenuItem off,
         ToolStripMenuItem low,
         ToolStripMenuItem medium,
         ToolStripMenuItem high,
-        ToolStripMenuItem max,
         ToolStripMenuItem custom)
     {
+        centerBias = Math.Clamp(centerBias, 0.0, 1.0);
+
+        _config.CenterBias = centerBias;
+        UpdateCenterBiasMenuChecks(centerBias, off, low, medium, high, custom);
+
+        _engine.ReapplyCurrentPositions();
+        SaveConfig();
+    }
+
+    private void InitializeCenterBiasMenuChecks(
+        ToolStripMenuItem off,
+        ToolStripMenuItem low,
+        ToolStripMenuItem medium,
+        ToolStripMenuItem high,
+        ToolStripMenuItem custom)
+    {
+        var current = Math.Clamp(_config.CenterBias, 0.0, 1.0);
+        UpdateCenterBiasMenuChecks(current, off, low, medium, high, custom);
+    }
+
+    private static void UpdateCenterBiasMenuChecks(
+        double centerBias,
+        ToolStripMenuItem off,
+        ToolStripMenuItem low,
+        ToolStripMenuItem medium,
+        ToolStripMenuItem high,
+        ToolStripMenuItem custom)
+    {
+        off.Checked = false;
         low.Checked = false;
         medium.Checked = false;
         high.Checked = false;
-        max.Checked = false;
+        custom.Checked = false;
         custom.Visible = false;
 
-        if (Math.Abs(depth - 1.0) <= 0.01)
+        if (Math.Abs(centerBias - 0.0) <= 0.01)
         {
-            max.Checked = true;
+            off.Checked = true;
             return;
         }
 
-        if (Math.Abs(depth - 0.7) <= 0.01)
-        {
-            high.Checked = true;
-            return;
-        }
-
-        if (Math.Abs(depth - 0.45) <= 0.01)
-        {
-            medium.Checked = true;
-            return;
-        }
-
-        if (Math.Abs(depth - 0.2) <= 0.01)
+        if (Math.Abs(centerBias - 0.3) <= 0.01)
         {
             low.Checked = true;
             return;
         }
 
-        custom.Text = $"Custom (from config: {(int)Math.Round(depth * 100.0)}%)";
+        if (Math.Abs(centerBias - 0.55) <= 0.01)
+        {
+            medium.Checked = true;
+            return;
+        }
+
+        if (Math.Abs(centerBias - 0.8) <= 0.01)
+        {
+            high.Checked = true;
+            return;
+        }
+
+        custom.Text = $"Custom (from config: {(int)Math.Round(centerBias * 100.0)}%)";
+        custom.Checked = true;
         custom.Visible = true;
     }
 
