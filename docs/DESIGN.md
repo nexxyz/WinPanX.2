@@ -123,6 +123,7 @@ Important fields:
 Notes:
 
 - Manual config edits are supported.
+- Config is normalized on load/save (clamped numeric bounds, sanitized process list, canonical fallback behavior).
 - For preset-backed menu settings, non-preset values remain active and show as `Custom (from config)` in tray.
 
 ## Runtime and Reliability

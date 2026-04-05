@@ -1,6 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
-using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Drawing;
 using WinPanX2.Config;
 using WinPanX2.Core;
 using WinPanX2.Startup;
@@ -11,10 +12,8 @@ namespace WinPanX2.Tray;
 
 internal partial class TrayApp : ApplicationContext
 {
-    private static readonly MethodInfo? ShowContextMenuMethod =
-        typeof(NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic);
-
     private readonly NotifyIcon _notifyIcon;
+    private readonly Form _menuAnchor;
     private readonly SpatialAudioEngine _engine;
     private readonly AppConfig _config;
     private bool _initializing;
@@ -46,7 +45,14 @@ internal partial class TrayApp : ApplicationContext
             Text = "WinPan X.2"
         };
 
+        _menuAnchor = CreateMenuAnchor();
+
         _notifyIcon.ContextMenuStrip = BuildMenu();
+        if (_notifyIcon.ContextMenuStrip != null)
+        {
+            _notifyIcon.ContextMenuStrip.Closed += (_, _) =>
+                PostMessage(_menuAnchor.Handle, WmNull, IntPtr.Zero, IntPtr.Zero);
+        }
 
         SubscribeRuntimeEvents();
 
@@ -104,6 +110,8 @@ internal partial class TrayApp : ApplicationContext
         }
         catch { }
 
+        try { _menuAnchor.Dispose(); } catch { }
+
         if (exitApplication)
         {
             try { Application.Exit(); } catch { }
@@ -157,23 +165,37 @@ internal partial class TrayApp : ApplicationContext
 
     private void ShowContextMenu()
     {
-        if (ShowContextMenuMethod != null)
-        {
-            try
-            {
-                ShowContextMenuMethod.Invoke(_notifyIcon, null);
-                return;
-            }
-            catch
-            {
-                // Fall back to manual showing if reflection fails.
-            }
-        }
-
         var menu = _notifyIcon.ContextMenuStrip;
         if (menu == null)
             return;
 
+        SetForegroundWindow(_menuAnchor.Handle);
         menu.Show(Cursor.Position);
     }
+
+    private static Form CreateMenuAnchor()
+    {
+        var form = new Form
+        {
+            ShowInTaskbar = false,
+            Opacity = 0,
+            FormBorderStyle = FormBorderStyle.None,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-32000, -32000),
+            Size = new Size(1, 1)
+        };
+
+        form.Load += (_, _) => form.Hide();
+        form.Show();
+        form.Hide();
+        return form;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    private const uint WmNull = 0x0000;
 }
