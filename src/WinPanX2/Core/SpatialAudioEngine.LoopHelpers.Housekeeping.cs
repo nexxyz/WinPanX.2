@@ -82,7 +82,7 @@ internal sealed partial class SpatialAudioEngine
         foreach (var kvp in _activeSessionCache)
             activeCount += kvp.Value.Count;
 
-        Logger.Debug($"[Health] activeSessions={activeCount} smoothed={_smoothedPan.Count} bound={_boundHwnd.Count} lastResolved={_lastResolvedHwnd.Count} hwndMap={_hwndToKeys.Count} trackedHwnds={_trackedHwnds.Count} openedFirst={_windowFirstSeenTick.Count} openedLast={_windowLastSeenTick.Count} appliedStereo={_lastAppliedStereo.Count} originalStereo={_originalStereo.Count} nameCache={ProcessHelper.NameCacheCount}");
+        Logger.Debug($"[Health] activeSessions={activeCount} smoothed={_smoothedPan.Count} bound={_boundHwnd.Count} stickyPid={_stickyBoundHwndByPid.Count} stickyExe={_stickyBoundHwndByExe.Count} lastResolved={_lastResolvedHwnd.Count} hwndMap={_hwndToKeys.Count} trackedHwnds={_trackedHwnds.Count} openedFirst={_windowFirstSeenTick.Count} openedLast={_windowLastSeenTick.Count} appliedStereo={_lastAppliedStereo.Count} originalStereo={_originalStereo.Count} nameCache={ProcessHelper.NameCacheCount}");
         _lastHealthLogTick = nowTickOuter;
     }
 

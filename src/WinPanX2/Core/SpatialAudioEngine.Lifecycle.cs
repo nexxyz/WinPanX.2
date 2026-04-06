@@ -19,7 +19,10 @@ internal sealed partial class SpatialAudioEngine
         _smoothedPanLastUpdateTick.Clear();
         _boundHwnd.Clear();
         if (clearStickyBindings)
+        {
             _stickyBoundHwndByPid.Clear();
+            _stickyBoundHwndByExe.Clear();
+        }
         _lastAppliedStereo.Clear();
         _originalStereo.Clear();
         _touchProcessName.Clear();
@@ -57,6 +60,7 @@ internal sealed partial class SpatialAudioEngine
     {
         _boundHwnd.Clear();
         _stickyBoundHwndByPid.Clear();
+        _stickyBoundHwndByExe.Clear();
     }
 
     public void Start()
