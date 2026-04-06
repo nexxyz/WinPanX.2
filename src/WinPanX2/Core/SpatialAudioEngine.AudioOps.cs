@@ -290,6 +290,20 @@ internal sealed partial class SpatialAudioEngine
             && TryGetValidRect(stickyBound, out rect))
         {
             _boundHwnd[key] = stickyBound;
+            var sessionExe = ProcessHelper.GetProcessNameCached(pid, nowTick);
+            if (!string.IsNullOrWhiteSpace(sessionExe))
+                _stickyBoundHwndByExe[sessionExe] = stickyBound;
+            return true;
+        }
+
+        var exe = ProcessHelper.GetProcessNameCached(pid, nowTick);
+        if (!string.IsNullOrWhiteSpace(exe)
+            && _stickyBoundHwndByExe.TryGetValue(exe, out var stickyByExe)
+            && stickyByExe != IntPtr.Zero
+            && TryGetValidRect(stickyByExe, out rect))
+        {
+            _boundHwnd[key] = stickyByExe;
+            _stickyBoundHwndByPid[pid] = stickyByExe;
             return true;
         }
 

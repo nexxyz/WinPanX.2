@@ -1,5 +1,6 @@
 using System;
 using WinPanX2.Audio;
+using WinPanX2.Windowing;
 
 namespace WinPanX2.Core;
 
@@ -107,6 +108,7 @@ internal sealed partial class SpatialAudioEngine
                 _smoothedPan.TryRemove(key, out _);
                 _smoothedPanLastUpdateTick.TryRemove(key, out _);
                 _boundHwnd.TryRemove(key, out _);
+                _stickyBoundHwndByPid.TryRemove(key.pid, out _);
             }
             else
             {
@@ -162,6 +164,9 @@ internal sealed partial class SpatialAudioEngine
         _smoothedPanLastUpdateTick.TryRemove(key, out _);
         _boundHwnd.TryRemove(key, out _);
         _stickyBoundHwndByPid.TryRemove(key.pid, out _);
+        var processName = ProcessHelper.GetProcessName(key.pid);
+        if (!string.IsNullOrWhiteSpace(processName))
+            _stickyBoundHwndByExe.TryRemove(processName, out _);
 
         var removeKey = new TouchKey(key.deviceId, key.pid, session.SessionInstanceId);
         _lastAppliedStereo.TryRemove(removeKey, out _);

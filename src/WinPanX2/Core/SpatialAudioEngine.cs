@@ -47,6 +47,7 @@ internal sealed partial class SpatialAudioEngine : IDisposable
     private readonly ConcurrentDictionary<(string deviceId, int pid), long> _smoothedPanLastUpdateTick = new();
     private readonly ConcurrentDictionary<(string deviceId, int pid), IntPtr> _boundHwnd = new();
     private readonly ConcurrentDictionary<int, IntPtr> _stickyBoundHwndByPid = new();
+    private readonly ConcurrentDictionary<string, IntPtr> _stickyBoundHwndByExe = new(StringComparer.OrdinalIgnoreCase);
 
     // For follow modes, we still want a stable "last chosen hwnd" so we can:
     // - filter location-change WinEvents
